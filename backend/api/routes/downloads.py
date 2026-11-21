@@ -1,8 +1,12 @@
 from fastapi import APIRouter, Depends
 
 from backend.services.download_queue_service import DownloadQueueService
+from backend.services.runtime import (
+    RuntimeServices,
+    RuntimeWorkUnavailableError,
+)
 
-from ..dependencies import get_download_service
+from ..dependencies import get_download_service, get_runtime_services
 from ..errors import BusinessError
 from ..schemas import (
     ApiResponse,
@@ -45,9 +49,18 @@ def download_status(
 
 @router.post("/start", response_model=ApiResponse[DownloadStartData])
 def download_start(
+    runtime: RuntimeServices = Depends(get_runtime_services),
     service: DownloadQueueService = Depends(get_download_service),
 ) -> ApiResponse[DownloadStartData]:
-    started = service.start()
+    try:
+        with runtime.work_lease():
+            started = service.start()
+    except RuntimeWorkUnavailableError as exc:
+        raise BusinessError(
+            str(exc),
+            status_code=503,
+            code="RUNTIME_NOT_ACCEPTING_WORK",
+        ) from exc
     running = service.is_running()
     if not started and not running:
         raise BusinessError("下载队列启动失败。", status_code=503, code="DOWNLOAD_START_FAILED")
@@ -80,9 +93,20 @@ def download_stop(
 @router.post("/tasks", response_model=ApiResponse[DownloadBatchResult])
 def add_download_tasks(
     payload: DownloadBatchRequest,
+    runtime: RuntimeServices = Depends(get_runtime_services),
     service: DownloadQueueService = Depends(get_download_service),
 ) -> ApiResponse[DownloadBatchResult]:
-    result = service.queue_items([item.model_dump() for item in payload.items])
+    try:
+        with runtime.work_lease():
+            result = service.queue_items(
+                [item.model_dump() for item in payload.items]
+            )
+    except RuntimeWorkUnavailableError as exc:
+        raise BusinessError(
+            str(exc),
+            status_code=503,
+            code="RUNTIME_NOT_ACCEPTING_WORK",
+        ) from exc
     return ApiResponse[DownloadBatchResult](
         data=DownloadBatchResult.model_validate(result),
         message="下载任务已加入队列",
@@ -92,10 +116,22 @@ def add_download_tasks(
 @router.post("/immediate", response_model=ApiResponse[DownloadImmediateResult])
 def immediate_download(
     payload: ImmediateDownloadRequest,
+    runtime: RuntimeServices = Depends(get_runtime_services),
     service: DownloadQueueService = Depends(get_download_service),
 ) -> ApiResponse[DownloadImmediateResult]:
     try:
-        result = service.queue_immediate(payload.video_id, payload.title, payload.force)
+        with runtime.work_lease():
+            result = service.queue_immediate(
+                payload.video_id,
+                payload.title,
+                payload.force,
+            )
+    except RuntimeWorkUnavailableError as exc:
+        raise BusinessError(
+            str(exc),
+            status_code=503,
+            code="RUNTIME_NOT_ACCEPTING_WORK",
+        ) from exc
     except ValueError as exc:
         raise BusinessError(str(exc), status_code=400, code="INVALID_VIDEO_ID") from exc
     if result["reason"] == "queue_unavailable":
@@ -123,10 +159,18 @@ def get_download_task(
 @router.post("/tasks/{task_id}/retry", response_model=ApiResponse[DownloadTaskItem])
 def retry_download_task(
     task_id: str,
+    runtime: RuntimeServices = Depends(get_runtime_services),
     service: DownloadQueueService = Depends(get_download_service),
 ) -> ApiResponse[DownloadTaskItem]:
     try:
-        task = service.retry_task(task_id)
+        with runtime.work_lease():
+            task = service.retry_task(task_id)
+    except RuntimeWorkUnavailableError as exc:
+        raise BusinessError(
+            str(exc),
+            status_code=503,
+            code="RUNTIME_NOT_ACCEPTING_WORK",
+        ) from exc
     except ValueError as exc:
         raise BusinessError(str(exc), status_code=409, code="TASK_NOT_RETRYABLE") from exc
     if task is None:

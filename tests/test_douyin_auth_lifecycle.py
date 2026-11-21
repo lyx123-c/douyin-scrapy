@@ -1,9 +1,15 @@
 import threading
 import time
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
+
+try:
+    from . import runtime_test_environment as _test_runtime_environment
+except ImportError:
+    import runtime_test_environment as _test_runtime_environment
 
 from backend.services import douyin_auth
 
@@ -129,10 +135,16 @@ class DouyinAuthLifecycleTests(unittest.TestCase):
                 ),
             ):
                 with self.assertRaises(douyin_auth.LoginBrowserClosedError):
-                    douyin_auth.login_douyin(FakeTaskManager())
+                    douyin_auth.login_douyin(
+                        FakeTaskManager(),
+                        work_lease=nullcontext,
+                    )
                 self.assertTrue(first_session.closed)
 
-                result = douyin_auth.login_douyin(FakeTaskManager())
+                result = douyin_auth.login_douyin(
+                    FakeTaskManager(),
+                    work_lease=nullcontext,
+                )
 
             self.assertEqual(result, str(profile.resolve()))
             self.assertTrue(second_session.closed)
@@ -153,7 +165,10 @@ class DouyinAuthLifecycleTests(unittest.TestCase):
                 patch.object(douyin_auth, "cleanup_residual_login_processes", return_value=0),
                 patch.object(douyin_auth, "StealthySession", return_value=session),
             ):
-                result = douyin_auth.login_douyin(FakeTaskManager())
+                result = douyin_auth.login_douyin(
+                    FakeTaskManager(),
+                    work_lease=nullcontext,
+                )
 
             self.assertEqual(result, str(profile.resolve()))
             self.assertTrue(session.closed)
@@ -180,7 +195,10 @@ class DouyinAuthLifecycleTests(unittest.TestCase):
             ):
                 def run_first_login():
                     try:
-                        douyin_auth.login_douyin(FakeTaskManager())
+                        douyin_auth.login_douyin(
+                            FakeTaskManager(),
+                            work_lease=nullcontext,
+                        )
                     except Exception as exc:
                         errors.append(exc)
 
@@ -188,7 +206,10 @@ class DouyinAuthLifecycleTests(unittest.TestCase):
                 thread.start()
                 self.assertTrue(page_started.wait(timeout=2))
                 with self.assertRaisesRegex(RuntimeError, "Profile 正被占用"):
-                    douyin_auth.login_douyin(FakeTaskManager())
+                    douyin_auth.login_douyin(
+                        FakeTaskManager(),
+                        work_lease=nullcontext,
+                    )
                 thread.join(timeout=3)
 
             self.assertFalse(thread.is_alive())

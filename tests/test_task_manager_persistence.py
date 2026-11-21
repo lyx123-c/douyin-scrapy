@@ -6,6 +6,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+try:
+    from . import runtime_test_environment as _test_runtime_environment
+except ImportError:
+    import runtime_test_environment as _test_runtime_environment
+
 from backend.services.task_manager import TaskManager
 
 

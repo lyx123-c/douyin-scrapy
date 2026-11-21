@@ -6,6 +6,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+try:
+    from . import runtime_test_environment as _test_runtime_environment
+except ImportError:
+    import runtime_test_environment as _test_runtime_environment
+
 from backend.services.capture_service import CaptureService
 from backend.services.download_queue_service import DownloadQueueService
 from backend.services.runtime import RuntimeServices
@@ -61,7 +66,13 @@ class RuntimeServiceTests(unittest.TestCase):
     def test_capture_duplicate_start_stop_event_and_shutdown(self):
         stop_seen = threading.Event()
 
-        def fake_fetch(target_url, mode, stop_signal_checker, progress_callback=None):
+        def fake_fetch(
+            target_url,
+            mode,
+            stop_signal_checker,
+            progress_callback=None,
+            work_gate=None,
+        ):
             if progress_callback:
                 progress_callback("抓取中")
             while not stop_signal_checker():
@@ -99,7 +110,13 @@ class RuntimeServiceTests(unittest.TestCase):
         self.assertFalse(service.is_running())
 
     def test_capture_concurrent_start_only_creates_one_thread(self):
-        def fake_fetch(target_url, mode, stop_signal_checker, progress_callback=None):
+        def fake_fetch(
+            target_url,
+            mode,
+            stop_signal_checker,
+            progress_callback=None,
+            work_gate=None,
+        ):
             while not stop_signal_checker():
                 time.sleep(0.01)
             yield []
@@ -160,7 +177,13 @@ class RuntimeServiceTests(unittest.TestCase):
         release = threading.Event()
         killed = threading.Event()
 
-        def fake_fetch(target_url, mode, stop_signal_checker, progress_callback=None):
+        def fake_fetch(
+            target_url,
+            mode,
+            stop_signal_checker,
+            progress_callback=None,
+            work_gate=None,
+        ):
             while not stop_signal_checker():
                 time.sleep(0.01)
             stopped.set()
@@ -193,7 +216,12 @@ class RuntimeServiceTests(unittest.TestCase):
         started = threading.Event()
         release = threading.Event()
 
-        def fake_download(video_id, force=False, progress_callback=None):
+        def fake_download(
+            video_id,
+            force=False,
+            progress_callback=None,
+            work_gate=None,
+        ):
             self.assertFalse(force)
             started.set()
             release.wait(timeout=3)
@@ -242,7 +270,12 @@ class RuntimeServiceTests(unittest.TestCase):
         started = threading.Event()
         release = threading.Event()
 
-        def fake_download(video_id, force=False, progress_callback=None):
+        def fake_download(
+            video_id,
+            force=False,
+            progress_callback=None,
+            work_gate=None,
+        ):
             started.set()
             release.wait(timeout=3)
             return True, "done"
@@ -274,7 +307,12 @@ class RuntimeServiceTests(unittest.TestCase):
         )
         observed_force = []
 
-        def fake_download(video_id, force=False, progress_callback=None):
+        def fake_download(
+            video_id,
+            force=False,
+            progress_callback=None,
+            work_gate=None,
+        ):
             observed_force.append(force)
             return True, "force done"
 
@@ -331,7 +369,12 @@ class RuntimeServiceTests(unittest.TestCase):
         started = threading.Event()
         release = threading.Event()
 
-        def fake_download(video_id, force=False, progress_callback=None):
+        def fake_download(
+            video_id,
+            force=False,
+            progress_callback=None,
+            work_gate=None,
+        ):
             self.assertFalse(force)
             started.set()
             release.wait(timeout=3)

@@ -6,8 +6,12 @@ from backend.services.douyin_auth import (
     login_profile_state,
 )
 from backend.services.capture_service import CaptureService
+from backend.services.runtime import (
+    RuntimeServices,
+    RuntimeWorkUnavailableError,
+)
 
-from ..dependencies import get_capture_service
+from ..dependencies import get_capture_service, get_runtime_services
 from ..errors import BusinessError
 from ..schemas import (
     ApiResponse,
@@ -26,30 +30,48 @@ router = APIRouter(prefix="/api/capture", tags=["capture"])
 @router.post("/start", response_model=ApiResponse[CaptureStartData])
 def start_capture(
     payload: CaptureStartRequest,
+    runtime: RuntimeServices = Depends(get_runtime_services),
     service: CaptureService = Depends(get_capture_service),
 ) -> ApiResponse[CaptureStartData]:
-    login_state = login_profile_state()
-    if login_state == LOGIN_STATE_UNKNOWN:
-        raise BusinessError(
-            "无法确认抖音登录状态，暂时不能开始抓取。",
-            status_code=503,
-            code="LOGIN_STATUS_UNKNOWN",
-        )
-    if login_state != LOGIN_STATE_READY:
-        raise HTTPException(
-            status_code=401,
-            detail="请先完成抖音登录后再开始抓取。",
-        )
-
     try:
-        task_id = service.start_capture(payload.target_url, payload.mode)
-    except ValueError as exc:
-        raise BusinessError(str(exc), status_code=400, code="INVALID_CAPTURE_REQUEST") from exc
-    except Exception as exc:
+        with runtime.work_lease():
+            login_state = login_profile_state()
+            if login_state == LOGIN_STATE_UNKNOWN:
+                raise BusinessError(
+                    "无法确认抖音登录状态，暂时不能开始抓取。",
+                    status_code=503,
+                    code="LOGIN_STATUS_UNKNOWN",
+                )
+            if login_state != LOGIN_STATE_READY:
+                raise HTTPException(
+                    status_code=401,
+                    detail="请先完成抖音登录后再开始抓取。",
+                )
+
+            try:
+                task_id = service.start_capture(
+                    payload.target_url,
+                    payload.mode,
+                )
+            except ValueError as exc:
+                raise BusinessError(
+                    str(exc),
+                    status_code=400,
+                    code="INVALID_CAPTURE_REQUEST",
+                ) from exc
+            except RuntimeWorkUnavailableError:
+                raise
+            except Exception as exc:
+                raise BusinessError(
+                    f"抓取启动失败：{exc}",
+                    status_code=503,
+                    code="CAPTURE_START_FAILED",
+                ) from exc
+    except RuntimeWorkUnavailableError as exc:
         raise BusinessError(
-            f"抓取启动失败：{exc}",
+            str(exc),
             status_code=503,
-            code="CAPTURE_START_FAILED",
+            code="RUNTIME_NOT_ACCEPTING_WORK",
         ) from exc
 
     if task_id is None:

@@ -1,6 +1,7 @@
 import logging
 import time
 import threading
+from contextlib import nullcontext
 from typing import Callable
 
 from backend.services.douyin_scraper import (
@@ -23,10 +24,12 @@ class CaptureService:
         *,
         stop_grace_seconds: float = CAPTURE_STOP_GRACE_SECONDS,
         kill_browser: Callable[[], object] = kill_scraper_browsers_only,
+        work_gate: Callable[[], object] | None = None,
     ) -> None:
         self._task_manager = task_manager
         self._stop_grace_seconds = max(0.0, float(stop_grace_seconds))
         self._kill_browser = kill_browser
+        self._work_gate = work_gate or nullcontext
         self._thread: threading.Thread | None = None
         self._thread_lock = threading.Lock()
         self._kill_timer: threading.Timer | None = None
@@ -54,35 +57,36 @@ class CaptureService:
             if self._task_manager.is_download_running():
                 return None
 
-            try:
-                self._kill_browser()
-            except Exception:
-                logger.exception("启动抓取前清理残留浏览器失败。")
+            with self._work_gate():
+                try:
+                    self._kill_browser()
+                except Exception:
+                    logger.exception("启动抓取前清理残留浏览器失败。")
 
-            capture_task_id = self._task_manager.start_capture()
-            if capture_task_id is None:
-                return None
+                capture_task_id = self._task_manager.start_capture()
+                if capture_task_id is None:
+                    return None
 
-            thread = threading.Thread(
-                target=self._run_capture,
-                args=(capture_task_id, target_url, mode),
-                name=f"douyin-capture-{capture_task_id[:8]}",
-                daemon=True,
-            )
-            self._thread = thread
-            self._task_manager.set_capture_thread(thread)
-
-            try:
-                thread.start()
-            except Exception as exc:
-                logger.exception("抓取线程启动失败：%s", capture_task_id)
-                self._thread = None
-                self._task_manager.set_capture_thread(None)
-                self._task_manager.finish_capture(
-                    results=[],
-                    error=f"抓取线程启动失败：{exc}",
+                thread = threading.Thread(
+                    target=self._run_capture,
+                    args=(capture_task_id, target_url, mode),
+                    name=f"douyin-capture-{capture_task_id[:8]}",
+                    daemon=True,
                 )
-                raise RuntimeError(f"抓取线程启动失败：{exc}") from exc
+                self._thread = thread
+                self._task_manager.set_capture_thread(thread)
+
+                try:
+                    thread.start()
+                except Exception as exc:
+                    logger.exception("抓取线程启动失败：%s", capture_task_id)
+                    self._thread = None
+                    self._task_manager.set_capture_thread(None)
+                    self._task_manager.finish_capture(
+                        results=[],
+                        error=f"抓取线程启动失败：{exc}",
+                    )
+                    raise RuntimeError(f"抓取线程启动失败：{exc}") from exc
 
         return capture_task_id
 
@@ -95,6 +99,7 @@ class CaptureService:
                 mode,
                 self._task_manager.capture_stop_requested,
                 progress_callback=self._task_manager.update_capture_progress,
+                work_gate=self._work_gate,
             )
             results = next(generator)
         except Exception as exc:

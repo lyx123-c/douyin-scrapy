@@ -10,6 +10,11 @@ from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
+try:
+    from . import runtime_test_environment as _test_runtime_environment
+except ImportError:
+    import runtime_test_environment as _test_runtime_environment
+
 import httpx
 import pandas as pd
 import streamlit as st
@@ -536,7 +541,13 @@ class FastAPIIntegrationTests(unittest.TestCase):
             self.assertIs(app.state.runtime, runtime)
             self.assertIs(app.state.runtime.task_manager, task_manager)
             self.assertIs(app.state.task_manager, task_manager)
-            login_mock.assert_called_once_with(task_manager)
+            login_mock.assert_called_once()
+            login_args, login_kwargs = login_mock.call_args
+            self.assertIs(login_args[0], task_manager)
+            self.assertIs(
+                login_kwargs["work_lease"].__self__,
+                runtime,
+            )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["data"], {"profile_saved": True})

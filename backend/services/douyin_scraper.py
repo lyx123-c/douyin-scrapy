@@ -1,6 +1,8 @@
 import logging
 import os
+import sys
 import time
+from contextlib import nullcontext
 
 import psutil
 from scrapling.fetchers import StealthySession
@@ -59,7 +61,9 @@ def fetch_ids_task_generator(
     mode,
     stop_signal_checker,
     progress_callback=None,
+    work_gate=None,
 ):
+    work_gate = work_gate or nullcontext
     """Open a real browser, wait for the user to stop, then parse loaded data."""
     video_data, found_ids = {}, set()
     page_action_error = None
@@ -139,18 +143,25 @@ def fetch_ids_task_generator(
 
     try:
         _report_progress(progress_callback, "正在启动浏览器...")
-        with browser_profile_guard("douyin-capture"), StealthySession(
-            record_requests=True,
-            headless=False,
-            user_data_dir=USER_DATA_DIR,
-            network_idle=False,
-        ) as session:
-            session.fetch(
-                target_url,
-                page_action=capture_page,
-                wait=PAGE_LOAD_WAIT_MS,
-                timeout=PAGE_LOAD_TIMEOUT_MS,
-            )
+        with browser_profile_guard("douyin-capture"):
+            with work_gate():
+                session_context = StealthySession(
+                    record_requests=True,
+                    headless=False,
+                    user_data_dir=USER_DATA_DIR,
+                    network_idle=False,
+                )
+                session = session_context.__enter__()
+
+            try:
+                session.fetch(
+                    target_url,
+                    page_action=capture_page,
+                    wait=PAGE_LOAD_WAIT_MS,
+                    timeout=PAGE_LOAD_TIMEOUT_MS,
+                )
+            finally:
+                session_context.__exit__(*sys.exc_info())
 
         if page_action_error is not None:
             raise page_action_error

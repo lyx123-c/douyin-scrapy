@@ -6,6 +6,11 @@ from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from unittest.mock import patch
 
+try:
+    from . import runtime_test_environment as _test_runtime_environment
+except ImportError:
+    import runtime_test_environment as _test_runtime_environment
+
 import pandas as pd
 from fastapi.testclient import TestClient
 

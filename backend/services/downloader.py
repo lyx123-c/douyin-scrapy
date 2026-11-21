@@ -1,7 +1,9 @@
 import json
 import os
 import re
+import sys
 import time
+from contextlib import nullcontext
 
 import requests
 from scrapling.fetchers import StealthySession
@@ -123,7 +125,13 @@ def extract_best_audio_url(video_section):
     return None
 
 
-def download_video_task(video_id, force=False, progress_callback=None):
+def download_video_task(
+    video_id,
+    force=False,
+    progress_callback=None,
+    work_gate=None,
+):
+    work_gate = work_gate or nullcontext
     video_id = str(video_id).strip()
     if not AWEME_ID_RE.fullmatch(video_id):
         message = "视频 ID 格式不正确。"
@@ -180,28 +188,37 @@ def download_video_task(video_id, force=False, progress_callback=None):
             )
             detail_json = None
             try:
-                with browser_profile_guard(f"video-detail:{video_id}"), StealthySession(
-                    record_requests=True,
-                    headless=False,
-                    user_data_dir=USER_DATA_DIR,
-                    network_idle=False,
-                ) as session:
-                    session.fetch(f"https://www.douyin.com/video/{video_id}")
-                    for _ in range(40):
-                        time.sleep(0.5)
-                        for request in session.network.search(limit=None):
-                            if (
-                                "/aweme/detail/" in request.url
-                                and f"aweme_id={video_id}" in request.url
-                                and request.status == 200
-                            ):
-                                body = request.body
-                                if isinstance(body, bytes):
-                                    body = body.decode("utf-8")
-                                detail_json = json.loads(body)
+                with browser_profile_guard(f"video-detail:{video_id}"):
+                    with work_gate():
+                        session_context = StealthySession(
+                            record_requests=True,
+                            headless=False,
+                            user_data_dir=USER_DATA_DIR,
+                            network_idle=False,
+                        )
+                        session = session_context.__enter__()
+
+                    try:
+                        session.fetch(
+                            f"https://www.douyin.com/video/{video_id}"
+                        )
+                        for _ in range(40):
+                            time.sleep(0.5)
+                            for request in session.network.search(limit=None):
+                                if (
+                                    "/aweme/detail/" in request.url
+                                    and f"aweme_id={video_id}" in request.url
+                                    and request.status == 200
+                                ):
+                                    body = request.body
+                                    if isinstance(body, bytes):
+                                        body = body.decode("utf-8")
+                                    detail_json = json.loads(body)
+                                    break
+                            if detail_json and "aweme_detail" in detail_json:
                                 break
-                        if detail_json and "aweme_detail" in detail_json:
-                            break
+                    finally:
+                        session_context.__exit__(*sys.exc_info())
             except Exception as exc:
                 last_error = str(exc)
 

@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -141,14 +142,13 @@ def _wait_for_login_window_close(page, wait_seconds: float) -> bool:
     return closed or _page_is_closed(page)
 
 
-def login_douyin(task_manager: TaskManager) -> str:
+def login_douyin(task_manager: TaskManager, *, work_lease) -> str:
     if task_manager.is_capture_running():
         raise RuntimeError("抓取任务正在使用浏览器 Profile，请先停止抓取。")
     if task_manager.is_download_running():
         raise RuntimeError("下载任务正在使用浏览器 Profile，请等待任务结束后重试。")
 
     profile_path = Path(USER_DATA_DIR).expanduser().resolve()
-    profile_path.mkdir(parents=True, exist_ok=True)
     browser_closed = False
 
     def wait_for_login(page):
@@ -156,13 +156,18 @@ def login_douyin(task_manager: TaskManager) -> str:
         browser_closed = _wait_for_login_window_close(page, LOGIN_WAIT_SECONDS)
 
     with browser_profile_guard("login", timeout=LOGIN_PROFILE_LOCK_TIMEOUT):
-        cleanup_residual_login_processes(profile_path)
-        with StealthySession(
-            headless=False,
-            user_data_dir=str(profile_path),
-            network_idle=False,
-            retries=1,
-        ) as session:
+        with work_lease():
+            profile_path.mkdir(parents=True, exist_ok=True)
+            cleanup_residual_login_processes(profile_path)
+            session_context = StealthySession(
+                headless=False,
+                user_data_dir=str(profile_path),
+                network_idle=False,
+                retries=1,
+            )
+            session = session_context.__enter__()
+
+        try:
             try:
                 session.fetch(
                     DOUYIN_LOGIN_URL,
@@ -175,6 +180,8 @@ def login_douyin(task_manager: TaskManager) -> str:
                         "登录浏览器已关闭，登录流程已结束。"
                     ) from exc
                 raise
+        finally:
+            session_context.__exit__(*sys.exc_info())
 
     if browser_closed:
         raise LoginBrowserClosedError("登录浏览器已关闭，登录流程已结束。")

@@ -1,6 +1,8 @@
 import logging
 import time
 import threading
+from contextlib import nullcontext
+from typing import Callable
 
 from backend.repositories import is_already_downloaded
 from backend.services.downloader import download_video_task
@@ -14,8 +16,14 @@ logger = logging.getLogger(__name__)
 class DownloadQueueService:
     """Own the lifecycle of the single sequential download worker."""
 
-    def __init__(self, task_manager: TaskManager) -> None:
+    def __init__(
+        self,
+        task_manager: TaskManager,
+        *,
+        work_gate: Callable[[], object] | None = None,
+    ) -> None:
         self._task_manager = task_manager
+        self._work_gate = work_gate or nullcontext
         self._thread: threading.Thread | None = None
         self._stop_event: threading.Event | None = None
         self._thread_lock = threading.Lock()
@@ -27,6 +35,10 @@ class DownloadQueueService:
         return self._task_manager
 
     def start(self) -> bool:
+        with self._work_gate():
+            return self._start()
+
+    def _start(self) -> bool:
         with self._thread_lock:
             if self._shutdown_started:
                 return False
@@ -68,9 +80,15 @@ class DownloadQueueService:
                 self._force_task_ids.discard(task_id)
 
     def _worker_loop(self, stop_event: threading.Event) -> None:
+        from backend.services.runtime import RuntimeWorkUnavailableError
+
         try:
             while not stop_event.is_set():
-                task = self._task_manager.next_waiting_download()
+                try:
+                    with self._work_gate():
+                        task = self._task_manager.next_waiting_download()
+                except RuntimeWorkUnavailableError:
+                    break
                 if task is None:
                     break
 
@@ -95,6 +113,7 @@ class DownloadQueueService:
                         task["video_id"],
                         force=force,
                         progress_callback=report_progress,
+                        work_gate=self._work_gate,
                     )
                     if success:
                         self._task_manager.mark_success(
@@ -149,28 +168,36 @@ class DownloadQueueService:
         }
 
     def queue_items(self, items: list[dict]) -> dict:
-        created = []
-        existing = []
-        skipped = []
-        for item in items:
-            video_id = str(item.get("video_id", "")).strip()
-            if not AWEME_ID_RE.fullmatch(video_id):
-                skipped.append(video_id)
-                continue
-            title = str(item.get("title", "")).strip() or "无标题"
-            task, was_created = self._task_manager.enqueue_download(video_id, title)
-            if was_created:
-                created.append(task)
-            else:
-                existing.append(task)
-        return {
-            "created": created,
-            "existing": existing,
-            "skipped": skipped,
-            "created_count": len(created),
-        }
+        with self._work_gate():
+            created = []
+            existing = []
+            skipped = []
+            for item in items:
+                video_id = str(item.get("video_id", "")).strip()
+                if not AWEME_ID_RE.fullmatch(video_id):
+                    skipped.append(video_id)
+                    continue
+                title = str(item.get("title", "")).strip() or "无标题"
+                task, was_created = self._task_manager.enqueue_download(
+                    video_id,
+                    title,
+                )
+                if was_created:
+                    created.append(task)
+                else:
+                    existing.append(task)
+            return {
+                "created": created,
+                "existing": existing,
+                "skipped": skipped,
+                "created_count": len(created),
+            }
 
     def queue_immediate(self, video_id: str, title: str, force: bool) -> dict:
+        with self._work_gate():
+            return self._queue_immediate(video_id, title, force)
+
+    def _queue_immediate(self, video_id: str, title: str, force: bool) -> dict:
         video_id = str(video_id).strip()
         if not AWEME_ID_RE.fullmatch(video_id):
             raise ValueError("视频 ID 格式不正确。")
@@ -199,7 +226,7 @@ class DownloadQueueService:
                 )
 
         self.set_force_download(task["task_id"], force)
-        started = self.start()
+        started = self._start()
         if not started and not self.is_running():
             self.set_force_download(task["task_id"], False)
             return {"queued": False, "reason": "queue_unavailable", "task": task}
@@ -207,7 +234,8 @@ class DownloadQueueService:
         return {"queued": True, "reason": "queued", "task": task}
 
     def retry_task(self, task_id: str) -> dict | None:
-        return self._task_manager.retry_task(task_id)
+        with self._work_gate():
+            return self._task_manager.retry_task(task_id)
 
     def remove_task(self, task_id: str) -> dict:
         task = self._task_manager.get_task(task_id)

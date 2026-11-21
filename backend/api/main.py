@@ -14,24 +14,69 @@ from .routes import analytics_router, auth_router, capture_router, downloads_rou
 logger = logging.getLogger(__name__)
 
 
+def _clear_runtime_app_state(app: FastAPI) -> None:
+    for attribute in ("runtime", "task_manager"):
+        try:
+            setattr(app.state, attribute, None)
+        except BaseException:
+            logger.exception(
+                "Failed to clear FastAPI app state: %s",
+                attribute,
+            )
+
+
+def _shutdown_runtime(runtime, *, timeout: float = 30.0) -> bool:
+    try:
+        stopped = bool(runtime.shutdown(timeout=timeout))
+    except BaseException:
+        logger.exception("FastAPI RuntimeServices shutdown raised an exception.")
+        return False
+
+    if not stopped:
+        logger.warning(
+            "FastAPI RuntimeServices shutdown did not complete cleanly."
+        )
+    return stopped
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    runtime = None
+    _clear_runtime_app_state(app)
+
     with acquire_backend_runtime_ownership():
-        ensure_runtime_directories()
-        runtime = RuntimeServices(store_path=DEFAULT_QUEUE_STORE)
-        app.state.runtime = runtime
-        app.state.task_manager = runtime.task_manager
-        logger.info("FastAPI RuntimeServices initialized: %s", DEFAULT_QUEUE_STORE)
+        try:
+            ensure_runtime_directories()
+            runtime = RuntimeServices(store_path=DEFAULT_QUEUE_STORE)
+            app.state.runtime = runtime
+            app.state.task_manager = runtime.task_manager
+            logger.info(
+                "FastAPI RuntimeServices initialized: %s",
+                DEFAULT_QUEUE_STORE,
+            )
+        except BaseException:
+            logger.exception("FastAPI startup failed; cleaning partial Runtime state.")
+            if runtime is not None:
+                _shutdown_runtime(runtime)
+            _clear_runtime_app_state(app)
+            raise
 
         try:
             yield
-        finally:
-            stopped = runtime.shutdown(timeout=30)
-            if not stopped:
-                logger.warning("FastAPI RuntimeServices did not stop within the timeout.")
-            app.state.runtime = None
-            app.state.task_manager = None
-            logger.info("FastAPI RuntimeServices shutdown completed.")
+        except BaseException:
+            logger.exception("FastAPI lifespan body failed; cleaning Runtime state.")
+            _shutdown_runtime(runtime)
+            _clear_runtime_app_state(app)
+            raise
+        else:
+            stopped = _shutdown_runtime(runtime)
+            _clear_runtime_app_state(app)
+            if stopped:
+                logger.info("FastAPI RuntimeServices shutdown completed.")
+            else:
+                logger.warning(
+                    "FastAPI RuntimeServices shutdown completed with failures; "
+                    "app state references were cleared."
+                )
 
 
 app = FastAPI(

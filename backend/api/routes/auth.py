@@ -1,9 +1,12 @@
 from fastapi import APIRouter, Depends
 
 from backend.services.douyin_auth import login_douyin, login_profile_ready
-from backend.services.task_manager import TaskManager
+from backend.services.runtime import (
+    RuntimeServices,
+    RuntimeWorkUnavailableError,
+)
 
-from ..dependencies import get_task_manager
+from ..dependencies import get_runtime_services
 from ..errors import BusinessError
 from ..schemas import ApiResponse, AuthLoginData, AuthStatusData
 
@@ -21,10 +24,20 @@ def auth_status() -> ApiResponse[AuthStatusData]:
 
 @router.post("/login", response_model=ApiResponse[AuthLoginData])
 def auth_login(
-    task_manager: TaskManager = Depends(get_task_manager),
+    runtime: RuntimeServices = Depends(get_runtime_services),
 ) -> ApiResponse[AuthLoginData]:
     try:
-        login_douyin(task_manager)
+        runtime.ensure_accepting_work()
+        login_douyin(
+            runtime.task_manager,
+            work_lease=runtime.work_lease,
+        )
+    except RuntimeWorkUnavailableError as exc:
+        raise BusinessError(
+            str(exc),
+            status_code=503,
+            code="RUNTIME_NOT_ACCEPTING_WORK",
+        ) from exc
     except Exception as exc:
         raise BusinessError(f"登录失败：{exc}", status_code=409, code="LOGIN_FAILED") from exc
     return ApiResponse[AuthLoginData](

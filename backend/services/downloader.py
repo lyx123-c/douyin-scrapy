@@ -1,0 +1,371 @@
+import json
+import os
+import re
+import time
+
+import requests
+from scrapling.fetchers import StealthySession
+
+from backend.repositories import (
+    get_title_from_library,
+    is_already_downloaded,
+    upsert_analytics_record,
+)
+from backend.services.video_merger import merge_video_and_audio
+from backend.services.task_manager import browser_profile_guard
+from config import (
+    AWEME_ID_RE,
+    DOWNLOAD_RETRY_COUNT,
+    REQUEST_HEADERS,
+    SAVE_DIR,
+    USER_DATA_DIR,
+)
+
+
+def _report_progress(progress_callback, payload):
+    if progress_callback is None:
+        return
+    try:
+        progress_callback(payload)
+    except Exception:
+        pass
+
+
+def download_media(url, output_file, desc="下载", progress_callback=None):
+    part_file = f"{output_file}.part"
+    downloaded = 0
+    total_size = 0
+
+    _report_progress(
+        progress_callback,
+        {
+            "stage": desc,
+            "downloaded": 0,
+            "total": 0,
+            "progress": 0.0,
+            "message": f"{desc} · 开始下载",
+        },
+    )
+
+    try:
+        with requests.get(
+            url,
+            headers={**REQUEST_HEADERS, "Accept-Encoding": "identity"},
+            stream=True,
+            timeout=(20, 300),
+        ) as response:
+            response.raise_for_status()
+            content_type = response.headers.get("Content-Type", "").lower()
+            if "text/html" in content_type:
+                raise RuntimeError("下载地址返回了 HTML，登录状态或媒体签名可能已失效。")
+
+            total_size = int(response.headers.get("content-length", 0) or 0)
+            with open(part_file, "wb") as file:
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if not chunk:
+                        continue
+                    file.write(chunk)
+                    downloaded += len(chunk)
+                    progress = (
+                        min(downloaded / total_size, 1.0)
+                        if total_size > 0
+                        else 0.5
+                    )
+                    if total_size > 0:
+                        message = (
+                            f"{desc} · {downloaded / 1024 / 1024:.1f}MB / "
+                            f"{total_size / 1024 / 1024:.1f}MB"
+                        )
+                    else:
+                        message = f"{desc} · 已下载 {downloaded / 1024 / 1024:.1f}MB"
+                    _report_progress(
+                        progress_callback,
+                        {
+                            "stage": desc,
+                            "downloaded": downloaded,
+                            "total": total_size,
+                            "progress": progress,
+                            "message": message,
+                        },
+                    )
+
+        if downloaded < 1024:
+            raise RuntimeError(f"下载文件过小，仅 {downloaded} 字节。")
+
+        os.replace(part_file, output_file)
+        _report_progress(
+            progress_callback,
+            {
+                "stage": desc,
+                "downloaded": downloaded,
+                "total": total_size or downloaded,
+                "progress": 1.0,
+                "message": f"{desc} · 完成",
+            },
+        )
+    finally:
+        if os.path.exists(part_file):
+            os.remove(part_file)
+
+
+def extract_best_audio_url(video_section):
+    for audio_rate in video_section.get("bit_rate_audio") or []:
+        audio_meta = (audio_rate or {}).get("audio_meta") or {}
+        url_list = audio_meta.get("url_list") or {}
+        if isinstance(url_list, dict):
+            candidate = url_list.get("main_url") or url_list.get("backup_url")
+            if candidate:
+                return candidate
+        elif isinstance(url_list, list):
+            for candidate in url_list:
+                if candidate:
+                    return candidate
+    return None
+
+
+def download_video_task(video_id, force=False, progress_callback=None):
+    video_id = str(video_id).strip()
+    if not AWEME_ID_RE.fullmatch(video_id):
+        message = "视频 ID 格式不正确。"
+        _report_progress(
+            progress_callback,
+            {
+                "stage": "validate",
+                "video_id": video_id,
+                "progress": 0.0,
+                "message": message,
+            },
+        )
+        return False, message
+
+    if not force and is_already_downloaded(video_id):
+        message = "视频已在下载记录中。"
+        _report_progress(
+            progress_callback,
+            {
+                "stage": "skip",
+                "video_id": video_id,
+                "progress": 1.0,
+                "message": message,
+            },
+        )
+        return False, message
+
+    video_title = get_title_from_library(video_id) or "无标题"
+    detail_json = None
+    last_error = ""
+    video_temp = os.path.join(SAVE_DIR, f"temp_{video_id}_video.mp4")
+    audio_temp = os.path.join(SAVE_DIR, f"temp_{video_id}_audio.m4a")
+    merged_temp = os.path.join(SAVE_DIR, f"temp_{video_id}_merged.mp4")
+
+    for path in (video_temp, audio_temp, merged_temp):
+        if os.path.exists(path):
+            os.remove(path)
+
+    try:
+        for attempt in range(1, DOWNLOAD_RETRY_COUNT + 1):
+            message = (
+                f"正在拦截视频详情，尝试 {attempt}/{DOWNLOAD_RETRY_COUNT}"
+            )
+            _report_progress(
+                progress_callback,
+                {
+                    "stage": "detail",
+                    "video_id": video_id,
+                    "attempt": attempt,
+                    "max_attempts": DOWNLOAD_RETRY_COUNT,
+                    "progress": 0.0,
+                    "message": message,
+                },
+            )
+            detail_json = None
+            try:
+                with browser_profile_guard(f"video-detail:{video_id}"), StealthySession(
+                    record_requests=True,
+                    headless=False,
+                    user_data_dir=USER_DATA_DIR,
+                    network_idle=False,
+                ) as session:
+                    session.fetch(f"https://www.douyin.com/video/{video_id}")
+                    for _ in range(40):
+                        time.sleep(0.5)
+                        for request in session.network.search(limit=None):
+                            if (
+                                "/aweme/detail/" in request.url
+                                and f"aweme_id={video_id}" in request.url
+                                and request.status == 200
+                            ):
+                                body = request.body
+                                if isinstance(body, bytes):
+                                    body = body.decode("utf-8")
+                                detail_json = json.loads(body)
+                                break
+                        if detail_json and "aweme_detail" in detail_json:
+                            break
+            except Exception as exc:
+                last_error = str(exc)
+
+            if detail_json and "aweme_detail" in detail_json:
+                break
+            if attempt < DOWNLOAD_RETRY_COUNT:
+                time.sleep(2)
+
+        if not detail_json or "aweme_detail" not in detail_json:
+            suffix = f" 最后错误：{last_error}" if last_error else ""
+            message = (
+                f"连续 {DOWNLOAD_RETRY_COUNT} 次未截获视频详情。{suffix}"
+            ).strip()
+            _report_progress(
+                progress_callback,
+                {
+                    "stage": "detail_failed",
+                    "video_id": video_id,
+                    "progress": 0.0,
+                    "message": message,
+                },
+            )
+            return False, message
+
+        _report_progress(
+            progress_callback,
+            {
+                "stage": "parse",
+                "video_id": video_id,
+                "progress": 0.0,
+                "message": "已获取详情，正在解析媒体直链。",
+            },
+        )
+        detail = detail_json.get("aweme_detail") or {}
+        if video_title == "无标题":
+            video_title = (
+                str(detail.get("desc") or "无标题")
+                .replace("\n", " ")
+                .strip()
+                or "无标题"
+            )
+
+        author_name = (detail.get("author") or {}).get("nickname", "未知作者")
+        stats = detail.get("statistics") or {}
+        video_section = detail.get("video") or {}
+
+        best_video_url, best_score = None, (-1, -1)
+        for rate in video_section.get("bit_rate") or []:
+            play_addr = (rate or {}).get("play_addr") or {}
+            height = int(play_addr.get("height", 0) or 0)
+            is_h265 = int((rate or {}).get("is_h265", 0) or 0)
+            url_list = play_addr.get("url_list") or []
+            score = (height, 0 if is_h265 == 0 else -1)
+            if url_list and score > best_score:
+                best_score = score
+                best_video_url = url_list[0]
+
+        if not best_video_url:
+            message = "未找到可用的视频直链。"
+            _report_progress(
+                progress_callback,
+                {
+                    "stage": "parse_failed",
+                    "video_id": video_id,
+                    "progress": 0.0,
+                    "message": message,
+                },
+            )
+            return False, message
+
+        best_audio_url = extract_best_audio_url(video_section)
+        safe_title = (
+            re.sub(r'[\\/*?:"<>|\n\r#]', "", video_title).strip(" .")[:30]
+            or video_id[-6:]
+        )
+        os.makedirs(SAVE_DIR, exist_ok=True)
+        output_file = os.path.join(
+            SAVE_DIR,
+            f"{safe_title}_{video_id[-6:]}.mp4",
+        )
+
+        def media_progress(phase):
+            def callback(payload):
+                enriched = dict(payload)
+                enriched.update(
+                    {
+                        "video_id": video_id,
+                        "phase": phase,
+                    }
+                )
+                _report_progress(progress_callback, enriched)
+
+            return callback
+
+        download_media(
+            best_video_url,
+            video_temp,
+            desc="视频流",
+            progress_callback=media_progress("video"),
+        )
+        if best_audio_url:
+            download_media(
+                best_audio_url,
+                audio_temp,
+                desc="音频流",
+                progress_callback=media_progress("audio"),
+            )
+            _report_progress(
+                progress_callback,
+                {
+                    "stage": "merge",
+                    "video_id": video_id,
+                    "progress": 1.0,
+                    "message": "正在合并音视频。",
+                },
+            )
+            merge_video_and_audio(video_temp, audio_temp, merged_temp)
+            os.replace(merged_temp, output_file)
+        else:
+            os.replace(video_temp, output_file)
+
+        record = {
+            "视频ID": video_id,
+            "作者昵称": author_name,
+            "视频标题": video_title,
+            "点赞量": stats.get("digg_count", 0),
+            "评论量": stats.get("comment_count", 0),
+            "收藏量": stats.get("collect_count", 0),
+            "转发量": stats.get("share_count", 0),
+        }
+        _report_progress(
+            progress_callback,
+            {
+                "stage": "record",
+                "video_id": video_id,
+                "progress": 1.0,
+                "message": "正在写入下载记录。",
+            },
+        )
+        upsert_analytics_record(record)
+        message = f"视频已保存：{output_file}"
+        _report_progress(
+            progress_callback,
+            {
+                "stage": "complete",
+                "video_id": video_id,
+                "progress": 1.0,
+                "message": message,
+            },
+        )
+        return True, message
+    except Exception as exc:
+        message = f"下载或合并失败：{exc}"
+        _report_progress(
+            progress_callback,
+            {
+                "stage": "error",
+                "video_id": video_id,
+                "progress": 0.0,
+                "message": message,
+            },
+        )
+        return False, message
+    finally:
+        for path in (video_temp, audio_temp, merged_temp):
+            if os.path.exists(path):
+                os.remove(path)

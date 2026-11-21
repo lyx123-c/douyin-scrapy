@@ -1,0 +1,32 @@
+# Python 编译缓存
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 测试临时文件
+tests/_trial_temp/
+.pytest_cache/
+
+# 业务数据和媒体文件
+mmp/
+*.mp4
+*.m4a
+*.part
+data/
+*.csv
+*.log
+
+# 前端依赖和打包文件
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+$null

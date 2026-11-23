@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "product_id": "com.local.douyinworkbench",
+  "channel": "stable",
+  "supported_channels": [
+    "stable"
+  ],
+  "manifest_schema_version": 1,
+  "updater_version": "0.0.0",
+  "update_repository": "",
+  "development_repository": "lyx123-c/q",
+  "manifest_asset": "stable.json",
+  "signature_asset": "stable.json.sig"
+}

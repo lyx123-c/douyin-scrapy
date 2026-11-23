@@ -10,8 +10,25 @@ from backend.services.douyin_scraper import (
     kill_scraper_browsers_only,
 )
 
-from backend.services.video_merger import merge_video_and_audio
+from backend.services.resource_lifecycle import (
+    ManagedResource,
+    ProcessIdentity,
+    ResourceCloseResult,
+    ResourceState,
+    ResourceTracker,
+)
+from backend.services.video_merger import (
+    FFmpegCancelledError,
+    FFmpegExitUnconfirmedError,
+    FFmpegProcessError,
+    FFmpegRunResult,
+    FFmpegTimeoutError,
+    ManagedFFmpegProcess,
+    merge_video_and_audio,
+)
 from backend.services.downloader import (
+    DownloadCancelledError,
+    DownloadTaskResult,
     download_media,
     download_video_task,
     extract_best_audio_url,
@@ -27,6 +44,19 @@ __all__ = [
     "CaptureService",
     "DownloadQueueService",
     "RuntimeServices",
+    "ResourceState",
+    "ResourceCloseResult",
+    "ProcessIdentity",
+    "ManagedResource",
+    "ResourceTracker",
+    "ManagedFFmpegProcess",
+    "FFmpegRunResult",
+    "FFmpegProcessError",
+    "FFmpegCancelledError",
+    "FFmpegTimeoutError",
+    "FFmpegExitUnconfirmedError",
+    "DownloadCancelledError",
+    "DownloadTaskResult",
     "download_media",
     "download_video_task",
     "extract_best_audio_url",

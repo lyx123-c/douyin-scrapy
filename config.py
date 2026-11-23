@@ -4,6 +4,13 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+PRODUCT_ID = os.environ.get("DOUYIN_PRODUCT_ID", "").strip()
+PRODUCT_VERSION = os.environ.get("DOUYIN_PRODUCT_VERSION", "").strip()
+UPDATE_CHANNEL = os.environ.get("DOUYIN_UPDATE_CHANNEL", "").strip()
+RELEASE_TAG = os.environ.get("DOUYIN_RELEASE_TAG", "").strip()
+RELEASE_COMMIT = os.environ.get("DOUYIN_RELEASE_COMMIT", "").strip()
+BUILD_TIME = os.environ.get("DOUYIN_BUILD_TIME", "").strip()
+UPDATER_VERSION = os.environ.get("DOUYIN_UPDATER_VERSION", "").strip()
 
 # Development defaults intentionally retain the current local data locations.
 # Production/Electron must provide DOUYIN_APP_USER_DATA_DIR.

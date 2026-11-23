@@ -1,4 +1,14 @@
 node_modules/
 dist/
+release/
+backend-dist/
+backend-build/
+build/version-metadata.json
+release.zip
+vendor/ffmpeg/ffmpeg.exe
+*.pem
+*.key
+*.pfx
+*.p12
 .vite/
 *.local

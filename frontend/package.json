@@ -2,14 +2,30 @@
   "name": "douyin-workbench-frontend",
   "private": true,
   "version": "0.1.0",
+  "description": "Windows 本地抖音视频采集、下载与任务管理工作台。",
+  "author": "Douyin Video Workbench",
   "type": "module",
+  "main": "electron/main.cjs",
   "engines": {
     "node": ">=20.19.0"
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "version:metadata": "node scripts/generate-version-metadata.cjs",
+    "build": "npm run version:metadata && vite build",
+    "preview": "vite preview",
+    "update:test": "node --test scripts/test-update-security.cjs scripts/test-update-download.cjs",
+    "storage:test": "node --test scripts/test-storage-config.cjs",
+    "electron:start": "npm run version:metadata && node scripts/start-electron-dev.cjs",
+    "electron:dev": "npm run version:metadata && node scripts/start-electron-dev.cjs",
+    "electron:prod": "npm run build && electron .",
+    "ffmpeg:verify": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-ffmpeg.ps1",
+    "backend:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-backend.ps1",
+    "electron:build": "npm run ffmpeg:verify && npm run backend:build && npm run build && electron-builder --dir",
+    "electron:package": "npm run ffmpeg:verify && npm run backend:build && npm run build && electron-builder --win nsis",
+    "release:manifest": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate-release-manifest.ps1",
+    "release:verify": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-release.ps1",
+    "release:package": "npm run electron:package && npm run release:manifest && npm run release:verify"
   },
   "dependencies": {
     "@element-plus/icons-vue": "2.3.2",
@@ -19,7 +35,92 @@
     "vue-router": "4.6.5"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "4.3.5",
     "@vitejs/plugin-vue": "6.0.11",
+    "electron": "35.7.5",
+    "electron-builder": "26.18.0",
+    "tailwindcss": "4.3.5",
     "vite": "8.3.8"
+  },
+  "allowScripts": {
+    "electron@35.7.5": true
+  },
+  "build": {
+    "appId": "com.local.douyinworkbench",
+    "productName": "抖音视频工作台",
+    "asar": true,
+    "compression": "normal",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "!node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "backend-dist/Backend",
+        "to": "backend",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "vendor/ffmpeg",
+        "to": "ffmpeg",
+        "filter": [
+          "ffmpeg.exe",
+          "LICENSE.txt",
+          "BUILD-INFO.json",
+          "VERSION.txt",
+          "SOURCE-INFO.txt"
+        ]
+      },
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      },
+      {
+        "from": "build/version-metadata.json",
+        "to": "version-metadata.json"
+      },
+      {
+        "from": "update/keyring.json",
+        "to": "update/keyring.json"
+      },
+      {
+        "from": "update/update-source.json",
+        "to": "update/update-source.json"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "${productName}",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "artifactName": "${productName}-${version}-${arch}.${ext}"
   }
 }

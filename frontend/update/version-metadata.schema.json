@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:douyin-workbench:version-metadata:1",
+  "title": "Douyin Workbench Version Metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "product_id",
+    "version",
+    "channel",
+    "tag",
+    "commit",
+    "build_time",
+    "updater_version",
+    "build_dirty"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "product_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{2,127}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "channel": {
+      "enum": [
+        "stable",
+        "beta"
+      ]
+    },
+    "tag": {
+      "type": "string"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[a-fA-F0-9]{7,64}$"
+    },
+    "build_time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updater_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "build_dirty": {
+      "type": "boolean"
+    }
+  }
+}

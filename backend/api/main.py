@@ -2,8 +2,9 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-from config import ensure_runtime_directories
+from config import PRODUCT_VERSION, ensure_runtime_directories
 from backend.services.runtime import DEFAULT_QUEUE_STORE, RuntimeServices
 
 from .errors import register_exception_handlers
@@ -82,8 +83,15 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="抖音视频工作台 API",
     description="抖音视频工作台本地 FastAPI 服务。第一版必须单进程运行。",
-    version="0.1.0",
+    version=PRODUCT_VERSION or "0.0.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 register_exception_handlers(app)

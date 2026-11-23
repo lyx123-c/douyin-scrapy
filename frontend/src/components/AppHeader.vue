@@ -1,29 +1,26 @@
+<script setup>
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
+import { Monitor } from '@element-plus/icons-vue'
+
+const route = useRoute()
+const sectionTitle = computed(() => route.meta.title || '工作台')
+</script>
+
 <template>
-  <header class="app-topbar">
-    <RouterLink class="brand-link" to="/">
-      <div class="brand-block">
-        <div class="brand-mark" aria-hidden="true">
-          <span class="brand-mark__play" />
-        </div>
-        <div>
-          <p class="brand-eyebrow">LOCAL WORKBENCH</p>
-          <h1>抖音视频工作台</h1>
-        </div>
-      </div>
-    </RouterLink>
-
-    <nav class="app-nav" aria-label="主导航">
-      <RouterLink class="app-nav__link" to="/">服务状态</RouterLink>
-      <RouterLink class="app-nav__link" to="/videos">视频库</RouterLink>
-      <RouterLink class="app-nav__link" to="/capture">抓取管理</RouterLink>
-      <RouterLink class="app-nav__link" to="/downloads">下载管理</RouterLink>
-      <RouterLink class="app-nav__link" to="/analytics">统计分析</RouterLink>
-    </nav>
-
-    <div class="topbar-meta">
-      <span>Vue 3</span>
-      <span class="meta-divider" />
-      <span>FastAPI</span>
+  <header
+    class="z-10 flex min-h-14 shrink-0 items-center justify-between border-b border-line bg-panel px-6 shadow-[0_1px_2px_rgba(17,25,31,0.035)] max-[760px]:sticky max-[760px]:top-0 max-[760px]:z-20 max-[760px]:min-h-12 max-[760px]:px-4"
+  >
+    <div class="flex min-w-0 items-center gap-2.5 text-[12px] text-muted-strong">
+      <ElIcon class="shrink-0 text-[15px] text-brand"><Monitor /></ElIcon>
+      <span class="whitespace-nowrap">本地工作台</span>
+      <span class="mx-1 h-3.5 w-px bg-line" aria-hidden="true" />
+      <strong class="truncate font-semibold text-ink">{{ sectionTitle }}</strong>
+    </div>
+    <div class="flex items-center gap-2 whitespace-nowrap text-[11px] text-muted-strong max-[760px]:hidden" aria-label="运行环境">
+      <span>Windows Desktop</span>
+      <span class="h-1 w-1 rounded-full bg-muted-strong/60" aria-hidden="true" />
+      <span>Vue 3 + FastAPI</span>
     </div>
   </header>
 </template>

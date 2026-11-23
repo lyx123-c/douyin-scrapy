@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "provider": "github_releases",
+  "manifest_asset": "stable.json",
+  "signature_asset": "stable.json.sig",
+  "repository": "",
+  "allowed_manifest_hosts": [
+    "github.com",
+    "objects.githubusercontent.com",
+    "release-assets.githubusercontent.com"
+  ],
+  "allowed_asset_hosts": [
+    "github.com",
+    "objects.githubusercontent.com",
+    "release-assets.githubusercontent.com"
+  ],
+  "request_timeout_ms": 15000
+}

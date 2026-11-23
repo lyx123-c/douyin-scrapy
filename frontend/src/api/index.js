@@ -10,8 +10,15 @@ export class ApiError extends Error {
   }
 }
 
+const runtimeApiBaseUrl = String(
+  typeof window !== 'undefined' ? window.desktopRuntime?.apiBaseUrl || '' : '',
+).trim()
+const environmentApiBaseUrl = String(import.meta.env.VITE_API_BASE_URL || '').trim()
+const developmentApiBaseUrl = import.meta.env.DEV ? 'http://127.0.0.1:8000' : ''
+
+export const usingDesktopApiBridge = Boolean(runtimeApiBaseUrl)
 export const configuredApiBaseUrl = (
-  import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
+  runtimeApiBaseUrl || environmentApiBaseUrl || developmentApiBaseUrl
 ).replace(/\/+$/, '')
 
 const requestBaseUrl = import.meta.env.DEV ? '/backend' : configuredApiBaseUrl
@@ -49,7 +56,10 @@ function normalizeError(error) {
   }
 
   if (!error.response) {
-    return new ApiError(`无法连接 FastAPI：${configuredApiBaseUrl}`, {
+    const message = configuredApiBaseUrl
+      ? `无法连接 FastAPI：${configuredApiBaseUrl}`
+      : 'Electron 未提供有效的 Backend API 地址。'
+    return new ApiError(message, {
       code: 'NETWORK_ERROR',
     })
   }

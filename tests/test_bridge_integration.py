@@ -21,6 +21,8 @@ import streamlit as st
 from fastapi.testclient import TestClient
 from streamlit.testing.v1 import AppTest
 
+import config
+
 from backend.api.main import app
 from backend.api.ownership import RuntimeOwnershipError, acquire_backend_runtime_ownership
 from backend.services.capture_service import CaptureService
@@ -567,6 +569,71 @@ class FastAPIIntegrationTests(unittest.TestCase):
         self.assertEqual(response.json()["data"]["code"], "LOGIN_FAILED")
         self.assertIn("登录失败", response.json()["message"])
         self.assertNotIn("Traceback", response.text)
+
+    def test_health_reports_unified_release_metadata(self):
+        with (
+            patch("backend.api.main.acquire_backend_runtime_ownership", fake_ownership),
+            patch("backend.api.routes.health.PRODUCT_ID", "com.local.douyinworkbench"),
+            patch("backend.api.routes.health.PRODUCT_VERSION", "1.3.0"),
+            patch("backend.api.routes.health.UPDATE_CHANNEL", "stable"),
+            patch("backend.api.routes.health.RELEASE_TAG", "v1.3.0"),
+            patch("backend.api.routes.health.RELEASE_COMMIT", "abcdef1234567890"),
+            patch("backend.api.routes.health.BUILD_TIME", "2026-11-23T10:00:00.000Z"),
+            patch("backend.api.routes.health.UPDATER_VERSION", "0.1.0"),
+            TestClient(app) as client,
+        ):
+            response = client.get("/api/health")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["data"], {
+            "status": "running",
+            "product_id": "com.local.douyinworkbench",
+            "version": "1.3.0",
+            "channel": "stable",
+            "tag": "v1.3.0",
+            "commit": "abcdef1234567890",
+            "build_time": "2026-11-23T10:00:00.000Z",
+            "updater_version": "0.1.0",
+        })
+
+    def test_prepare_update_shutdown_stops_runtime_and_schedules_process_exit(self):
+        shutdown_callbacks = []
+        app.state.request_process_shutdown = lambda: shutdown_callbacks.append(True)
+        try:
+            with (
+                patch("backend.api.main.acquire_backend_runtime_ownership", fake_ownership),
+                patch.object(RuntimeServices, "shutdown", return_value=True) as shutdown_mock,
+                TestClient(app) as client,
+            ):
+                response = client.post("/api/system/prepare-update-shutdown")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["data"], {
+                "accepted": True,
+                "runtime_stopped": True,
+                "shutdown_scheduled": True,
+            })
+            self.assertEqual(shutdown_callbacks, [True])
+            self.assertGreaterEqual(shutdown_mock.call_count, 1)
+        finally:
+            app.state.request_process_shutdown = None
+
+    def test_system_storage_paths_report_runtime_configuration(self):
+        with (
+            patch("backend.api.main.acquire_backend_runtime_ownership", fake_ownership),
+            TestClient(app) as client,
+        ):
+            response = client.get("/api/system/storage")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertIn("app_user_data_dir", data)
+        self.assertIn("video_data_dir", data)
+        self.assertIn("task_data_dir", data)
+        self.assertIn("browser_profile_dir", data)
+        self.assertIn("save_dir", data)
+        self.assertEqual(data["save_dir"], config.SAVE_DIR)
+        self.assertEqual(data["browser_profile_dir"], config.USER_DATA_DIR)
 
     def test_system_open_directory_failure_returns_safe_error(self):
         with (

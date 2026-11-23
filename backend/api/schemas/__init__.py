@@ -1,6 +1,10 @@
 from .common import ApiResponse, HealthStatus
 from .auth import AuthLoginData, AuthStatusData
-from .system import OpenSaveDirectoryData
+from .system import (
+    OpenSaveDirectoryData,
+    PrepareUpdateShutdownData,
+    StorageRuntimePathsData,
+)
 from .capture import (
     CaptureClearData,
     CaptureResultItem,
@@ -33,6 +37,8 @@ __all__ = [
     "AuthStatusData",
     "AuthLoginData",
     "OpenSaveDirectoryData",
+    "PrepareUpdateShutdownData",
+    "StorageRuntimePathsData",
     "CaptureStartRequest",
     "CaptureStartData",
     "CaptureStatusData",

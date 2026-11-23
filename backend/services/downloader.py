@@ -1,9 +1,11 @@
 import json
+import logging
 import os
 import re
 import sys
 import time
 from contextlib import nullcontext
+from dataclasses import dataclass
 
 import requests
 from scrapling.fetchers import StealthySession
@@ -13,7 +15,15 @@ from backend.repositories import (
     is_already_downloaded,
     upsert_analytics_record,
 )
-from backend.services.video_merger import merge_video_and_audio
+from backend.services.video_merger import (
+    FFmpegCancelledError,
+    FFmpegExitUnconfirmedError,
+    FFmpegProcessError,
+    FFmpegRunResult,
+    FFmpegTimeoutError,
+    merge_video_and_audio,
+    validate_merged_output,
+)
 from backend.services.task_manager import browser_profile_guard
 from config import (
     AWEME_ID_RE,
@@ -22,6 +32,69 @@ from config import (
     SAVE_DIR,
     USER_DATA_DIR,
 )
+
+
+logger = logging.getLogger(__name__)
+DEFAULT_MEDIA_READ_TIMEOUT = 60
+MEDIA_CHUNK_SIZE = 256 * 1024
+
+
+class DownloadCancelledError(RuntimeError):
+    """Raised when a download task is cancelled via stop_event."""
+
+
+@dataclass
+class DownloadTaskResult:
+    """Structured download task execution result compatible with TaskManager statuses."""
+
+    status: str  # "success" | "failed" | "interrupted" | "skipped"
+    message: str
+    error: str | None = None
+    cancelled: bool = False
+    timed_out: bool = False
+    exit_verified: bool = True
+    output_file: str | None = None
+
+    @property
+    def succeeded(self) -> bool:
+        return self.status == "success"
+
+
+def _is_cancelled(stop_event) -> bool:
+    return bool(stop_event is not None and stop_event.is_set())
+
+
+def _interruptible_wait(seconds: float, stop_event) -> bool:
+    """Wait up to `seconds`; return True if stop_event was triggered."""
+    if stop_event is not None:
+        return bool(stop_event.wait(timeout=max(0.0, float(seconds))))
+    time.sleep(max(0.0, float(seconds)))
+    return False
+
+
+def _remove_temp_file_with_retry(
+    path: str,
+    *,
+    retries: int = 3,
+    delay: float = 0.15,
+) -> None:
+    """Delete a temp file with short retry backoff for transient Windows locks."""
+    for attempt in range(max(1, int(retries))):
+        if not os.path.exists(path):
+            return
+        try:
+            os.remove(path)
+            return
+        except FileNotFoundError:
+            return
+        except PermissionError:
+            if attempt + 1 < retries:
+                time.sleep(delay)
+            else:
+                logger.warning("清理临时文件仍被占用：%s", path, exc_info=True)
+        except OSError:
+            logger.warning("清理临时文件失败：%s", path, exc_info=True)
+            return
 
 
 def _report_progress(progress_callback, payload):
@@ -33,10 +106,21 @@ def _report_progress(progress_callback, payload):
         pass
 
 
-def download_media(url, output_file, desc="下载", progress_callback=None):
+def download_media(
+    url,
+    output_file,
+    desc="下载",
+    progress_callback=None,
+    *,
+    stop_event=None,
+    read_timeout=DEFAULT_MEDIA_READ_TIMEOUT,
+):
     part_file = f"{output_file}.part"
     downloaded = 0
     total_size = 0
+
+    if _is_cancelled(stop_event):
+        raise DownloadCancelledError(f"{desc}已取消。")
 
     _report_progress(
         progress_callback,
@@ -54,8 +138,10 @@ def download_media(url, output_file, desc="下载", progress_callback=None):
             url,
             headers={**REQUEST_HEADERS, "Accept-Encoding": "identity"},
             stream=True,
-            timeout=(20, 300),
+            timeout=(20, read_timeout),
         ) as response:
+            if _is_cancelled(stop_event):
+                raise DownloadCancelledError(f"{desc}已取消。")
             response.raise_for_status()
             content_type = response.headers.get("Content-Type", "").lower()
             if "text/html" in content_type:
@@ -63,7 +149,9 @@ def download_media(url, output_file, desc="下载", progress_callback=None):
 
             total_size = int(response.headers.get("content-length", 0) or 0)
             with open(part_file, "wb") as file:
-                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                for chunk in response.iter_content(chunk_size=MEDIA_CHUNK_SIZE):
+                    if _is_cancelled(stop_event):
+                        raise DownloadCancelledError(f"{desc}已取消。")
                     if not chunk:
                         continue
                     file.write(chunk)
@@ -91,6 +179,9 @@ def download_media(url, output_file, desc="下载", progress_callback=None):
                         },
                     )
 
+        if _is_cancelled(stop_event):
+            raise DownloadCancelledError(f"{desc}已取消。")
+
         if downloaded < 1024:
             raise RuntimeError(f"下载文件过小，仅 {downloaded} 字节。")
 
@@ -107,7 +198,10 @@ def download_media(url, output_file, desc="下载", progress_callback=None):
         )
     finally:
         if os.path.exists(part_file):
-            os.remove(part_file)
+            try:
+                os.remove(part_file)
+            except OSError:
+                logger.warning("清理临时下载分片文件失败：%s", part_file, exc_info=True)
 
 
 def extract_best_audio_url(video_section):
@@ -130,9 +224,39 @@ def download_video_task(
     force=False,
     progress_callback=None,
     work_gate=None,
+    *,
+    stop_event=None,
+    resource_tracker=None,
+    deadline=None,
+    owner_id=None,
+    save_dir=None,
+    return_details=False,
 ):
     work_gate = work_gate or nullcontext
     video_id = str(video_id).strip()
+
+    def _result(
+        status: str,
+        message: str,
+        *,
+        error: str | None = None,
+        cancelled: bool = False,
+        timed_out: bool = False,
+        exit_verified: bool = True,
+        output_file: str | None = None,
+    ):
+        if return_details:
+            return DownloadTaskResult(
+                status=status,
+                message=message,
+                error=error,
+                cancelled=cancelled,
+                timed_out=timed_out,
+                exit_verified=exit_verified,
+                output_file=output_file,
+            )
+        return status == "success", message
+
     if not AWEME_ID_RE.fullmatch(video_id):
         message = "视频 ID 格式不正确。"
         _report_progress(
@@ -144,7 +268,20 @@ def download_video_task(
                 "message": message,
             },
         )
-        return False, message
+        return _result("failed", message, error=message)
+
+    if _is_cancelled(stop_event):
+        message = "下载任务已取消，可点击重试。"
+        _report_progress(
+            progress_callback,
+            {
+                "stage": "cancelled",
+                "video_id": video_id,
+                "progress": 0.0,
+                "message": message,
+            },
+        )
+        return _result("interrupted", message, cancelled=True)
 
     if not force and is_already_downloaded(video_id):
         message = "视频已在下载记录中。"
@@ -157,21 +294,29 @@ def download_video_task(
                 "message": message,
             },
         )
-        return False, message
+        return _result("skipped", message)
 
     video_title = get_title_from_library(video_id) or "无标题"
+    output_dir = str(save_dir or SAVE_DIR)
     detail_json = None
     last_error = ""
-    video_temp = os.path.join(SAVE_DIR, f"temp_{video_id}_video.mp4")
-    audio_temp = os.path.join(SAVE_DIR, f"temp_{video_id}_audio.m4a")
-    merged_temp = os.path.join(SAVE_DIR, f"temp_{video_id}_merged.mp4")
+    ffmpeg_exit_verified = True
+    video_temp = os.path.join(output_dir, f"temp_{video_id}_video.mp4")
+    audio_temp = os.path.join(output_dir, f"temp_{video_id}_audio.m4a")
+    merged_temp = os.path.join(output_dir, f"temp_{video_id}_merged.mp4")
 
     for path in (video_temp, audio_temp, merged_temp):
         if os.path.exists(path):
-            os.remove(path)
+            try:
+                os.remove(path)
+            except OSError:
+                logger.warning("清理历史临时文件失败：%s", path, exc_info=True)
 
     try:
         for attempt in range(1, DOWNLOAD_RETRY_COUNT + 1):
+            if _is_cancelled(stop_event):
+                raise DownloadCancelledError("下载任务已取消，可点击重试。")
+
             message = (
                 f"正在拦截视频详情，尝试 {attempt}/{DOWNLOAD_RETRY_COUNT}"
             )
@@ -189,6 +334,8 @@ def download_video_task(
             detail_json = None
             try:
                 with browser_profile_guard(f"video-detail:{video_id}"):
+                    if _is_cancelled(stop_event):
+                        raise DownloadCancelledError("下载任务已取消，可点击重试。")
                     with work_gate():
                         session_context = StealthySession(
                             record_requests=True,
@@ -203,7 +350,8 @@ def download_video_task(
                             f"https://www.douyin.com/video/{video_id}"
                         )
                         for _ in range(40):
-                            time.sleep(0.5)
+                            if _interruptible_wait(0.5, stop_event):
+                                raise DownloadCancelledError("下载任务已取消，可点击重试。")
                             for request in session.network.search(limit=None):
                                 if (
                                     "/aweme/detail/" in request.url
@@ -219,13 +367,19 @@ def download_video_task(
                                 break
                     finally:
                         session_context.__exit__(*sys.exc_info())
+            except DownloadCancelledError:
+                raise
             except Exception as exc:
                 last_error = str(exc)
 
             if detail_json and "aweme_detail" in detail_json:
                 break
             if attempt < DOWNLOAD_RETRY_COUNT:
-                time.sleep(2)
+                if _interruptible_wait(2, stop_event):
+                    raise DownloadCancelledError("下载任务已取消，可点击重试。")
+
+        if _is_cancelled(stop_event):
+            raise DownloadCancelledError("下载任务已取消，可点击重试。")
 
         if not detail_json or "aweme_detail" not in detail_json:
             suffix = f" 最后错误：{last_error}" if last_error else ""
@@ -241,7 +395,7 @@ def download_video_task(
                     "message": message,
                 },
             )
-            return False, message
+            return _result("failed", message, error=message)
 
         _report_progress(
             progress_callback,
@@ -287,16 +441,16 @@ def download_video_task(
                     "message": message,
                 },
             )
-            return False, message
+            return _result("failed", message, error=message)
 
         best_audio_url = extract_best_audio_url(video_section)
         safe_title = (
             re.sub(r'[\\/*?:"<>|\n\r#]', "", video_title).strip(" .")[:30]
             or video_id[-6:]
         )
-        os.makedirs(SAVE_DIR, exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
         output_file = os.path.join(
-            SAVE_DIR,
+            output_dir,
             f"{safe_title}_{video_id[-6:]}.mp4",
         )
 
@@ -318,6 +472,7 @@ def download_video_task(
             video_temp,
             desc="视频流",
             progress_callback=media_progress("video"),
+            stop_event=stop_event,
         )
         if best_audio_url:
             download_media(
@@ -325,7 +480,10 @@ def download_video_task(
                 audio_temp,
                 desc="音频流",
                 progress_callback=media_progress("audio"),
+                stop_event=stop_event,
             )
+            if _is_cancelled(stop_event):
+                raise DownloadCancelledError("下载任务已取消，可点击重试。")
             _report_progress(
                 progress_callback,
                 {
@@ -335,9 +493,45 @@ def download_video_task(
                     "message": "正在合并音视频。",
                 },
             )
-            merge_video_and_audio(video_temp, audio_temp, merged_temp)
+            merge_result = merge_video_and_audio(
+                video_temp,
+                audio_temp,
+                merged_temp,
+                stop_event=stop_event,
+                deadline=deadline,
+                resource_tracker=resource_tracker,
+                owner=owner_id or f"download:{video_id}",
+            )
+            if isinstance(merge_result, FFmpegRunResult):
+                if not merge_result.exit_verified:
+                    ffmpeg_exit_verified = False
+                    raise FFmpegExitUnconfirmedError(
+                        merge_result.error or "FFmpeg 进程退出未确认，禁止提交文件。",
+                        result=merge_result,
+                    )
+                if merge_result.cancelled or _is_cancelled(stop_event):
+                    raise DownloadCancelledError("下载任务已取消，可点击重试。")
+                if merge_result.returncode != 0 or not merge_result.output_valid:
+                    raise FFmpegProcessError(
+                        merge_result.error or "FFmpeg 合并输出校验失败。",
+                        result=merge_result,
+                    )
+            else:
+                if _is_cancelled(stop_event):
+                    raise DownloadCancelledError("下载任务已取消，可点击重试。")
+                output_ok, output_detail = validate_merged_output(merged_temp)
+                if not output_ok:
+                    raise FFmpegProcessError(output_detail)
+
+            if _is_cancelled(stop_event):
+                raise DownloadCancelledError("下载任务已取消，可点击重试。")
             os.replace(merged_temp, output_file)
         else:
+            if _is_cancelled(stop_event):
+                raise DownloadCancelledError("下载任务已取消，可点击重试。")
+            output_ok, output_detail = validate_merged_output(video_temp)
+            if not output_ok:
+                raise RuntimeError(output_detail)
             os.replace(video_temp, output_file)
 
         record = {
@@ -369,7 +563,45 @@ def download_video_task(
                 "message": message,
             },
         )
-        return True, message
+        return _result("success", message, output_file=output_file)
+    except FFmpegExitUnconfirmedError as exc:
+        ffmpeg_exit_verified = False
+        message = f"FFmpeg 退出未确认，已保留临时文件防止占用冲突：{exc}"
+        logger.error("%s", message)
+        _report_progress(
+            progress_callback,
+            {
+                "stage": "error",
+                "video_id": video_id,
+                "progress": 0.0,
+                "message": message,
+            },
+        )
+        return _result("failed", message, error=message, exit_verified=False)
+    except (DownloadCancelledError, FFmpegCancelledError) as exc:
+        message = str(exc) or "下载任务已取消，可点击重试。"
+        _report_progress(
+            progress_callback,
+            {
+                "stage": "cancelled",
+                "video_id": video_id,
+                "progress": 0.0,
+                "message": message,
+            },
+        )
+        return _result("interrupted", message, cancelled=True, exit_verified=True)
+    except FFmpegTimeoutError as exc:
+        message = f"音视频合并超时：{exc}"
+        _report_progress(
+            progress_callback,
+            {
+                "stage": "error",
+                "video_id": video_id,
+                "progress": 0.0,
+                "message": message,
+            },
+        )
+        return _result("failed", message, error=message, timed_out=True, exit_verified=True)
     except Exception as exc:
         message = f"下载或合并失败：{exc}"
         _report_progress(
@@ -381,8 +613,13 @@ def download_video_task(
                 "message": message,
             },
         )
-        return False, message
+        return _result("failed", message, error=message)
     finally:
-        for path in (video_temp, audio_temp, merged_temp):
-            if os.path.exists(path):
-                os.remove(path)
+        if ffmpeg_exit_verified:
+            for path in (video_temp, audio_temp, merged_temp):
+                _remove_temp_file_with_retry(path)
+        else:
+            logger.warning(
+                "FFmpeg 退出未确认，跳过临时文件删除（video_id=%s）。",
+                video_id,
+            )

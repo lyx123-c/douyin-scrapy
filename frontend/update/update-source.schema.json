@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:douyin-workbench:update-source:1",
+  "title": "Douyin Workbench Public Update Source",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "provider",
+    "repository",
+    "allowed_manifest_hosts",
+    "allowed_asset_hosts",
+    "request_timeout_ms",
+    "manifest_asset",
+    "signature_asset"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "provider": {
+      "const": "github_releases"
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^$|^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "allowed_manifest_hosts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "allowed_asset_hosts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "request_timeout_ms": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 120000
+    },
+    "manifest_asset": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "signature_asset": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    }
+  }
+}

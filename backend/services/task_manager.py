@@ -10,7 +10,7 @@ from datetime import datetime
 from contextlib import contextmanager
 from typing import Any, Optional
 
-from config import DOWNLOAD_QUEUE_JSON
+from config import DOWNLOAD_QUEUE_JSON, SAVE_DIR
 
 
 VALID_TASK_STATUSES = {
@@ -229,6 +229,7 @@ class TaskManager:
                 raise ValueError("任务存档格式错误：tasks 不是 list")
 
             recovered = 0
+            normalized = 0
 
             with self._lock:
                 for task in tasks:
@@ -245,6 +246,9 @@ class TaskManager:
                         continue
 
                     task.setdefault("task_type", "download" if task.get("video_id") else "unknown")
+                    if task.get("task_type") == "download" and not task.get("target_dir"):
+                        task["target_dir"] = SAVE_DIR
+                        normalized += 1
                     task.setdefault("status", "waiting")
                     task.setdefault("progress", 0.0)
                     task.setdefault("message", "")
@@ -273,7 +277,7 @@ class TaskManager:
                 recovered,
             )
 
-            if recovered:
+            if recovered or normalized:
                 self._dump(force=True)
 
         except json.JSONDecodeError:
@@ -601,7 +605,7 @@ class TaskManager:
 
         return True
 
-    def enqueue_download(self, video_id, title):
+    def enqueue_download(self, video_id, title, save_dir=None):
         video_id = str(video_id).strip()
         with self._lock:
             for task in self._tasks.values():
@@ -617,6 +621,7 @@ class TaskManager:
                 "task_type": "download",
                 "video_id": video_id,
                 "title": title,
+                "target_dir": str(save_dir or SAVE_DIR),
                 "status": "waiting",
                 "progress": 0.0,
                 "message": "等待执行",

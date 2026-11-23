@@ -14,4 +14,11 @@ class ApiResponse(BaseModel, Generic[T]):
 
 class HealthStatus(BaseModel):
     status: Literal["running"] = "running"
+    product_id: str = ""
+    version: str = ""
+    channel: str = ""
+    tag: str = ""
+    commit: str = ""
+    build_time: str = ""
+    updater_version: str = ""
 

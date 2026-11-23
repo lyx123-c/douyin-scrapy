@@ -8,6 +8,7 @@ from pathlib import Path
 from config import DOWNLOAD_QUEUE_JSON
 from backend.services.capture_service import CaptureService
 from backend.services.download_queue_service import DownloadQueueService
+from backend.services.resource_lifecycle import ResourceTracker
 from backend.services.task_manager import TaskManager
 
 
@@ -49,6 +50,7 @@ class RuntimeServices:
         store_path: str | Path | None = None,
         capture_service: CaptureService | None = None,
         download_queue_service: DownloadQueueService | None = None,
+        resource_tracker: ResourceTracker | None = None,
     ) -> None:
         if task_manager is not None and store_path is not None:
             raise ValueError("task_manager 与 store_path 不能同时提供。")
@@ -59,6 +61,7 @@ class RuntimeServices:
             )
 
         self.task_manager = task_manager
+        self.resource_tracker = resource_tracker or ResourceTracker()
         self.capture_service = capture_service or CaptureService(
             task_manager,
             work_gate=self.work_lease,
@@ -68,6 +71,7 @@ class RuntimeServices:
             or DownloadQueueService(
                 task_manager,
                 work_gate=self.work_lease,
+                resource_tracker=self.resource_tracker,
             )
         )
 
@@ -286,6 +290,7 @@ class RuntimeServices:
             "work_starts_drained": False,
             "capture": {},
             "download": {},
+            "resources": {},
             "task_manager": {
                 "saved": False,
                 "error": None,
@@ -337,6 +342,8 @@ class RuntimeServices:
                     and not running
                 )
 
+            report["resources"] = self.resource_tracker.diagnostics()
+
             try:
                 report["task_manager"]["saved"] = bool(
                     self.task_manager.save()
@@ -357,12 +364,16 @@ class RuntimeServices:
                     report["capture"].get("running_after_shutdown") is False
                     and report["download"].get("running_after_shutdown") is False
                 )
+                all_resources_released = (
+                    report["resources"].get("unreleased_count", 0) == 0
+                )
                 success = bool(
                     report["error"] is None
-                and report["work_starts_drained"] is True
+                    and report["work_starts_drained"] is True
                     and report["capture"].get("success") is True
                     and report["download"].get("success") is True
                     and all_threads_stopped
+                    and all_resources_released
                     and report["task_manager"]["saved"] is True
                     and report["task_manager"]["error"] is None
                     and not report["deadline_exceeded"]
@@ -377,6 +388,7 @@ class RuntimeServices:
                 report["outcome"] = outcome
                 report["state"] = final_state.value
                 report["all_threads_stopped"] = all_threads_stopped
+                report["all_resources_released"] = all_resources_released
             finally:
                 with self._shutdown_lock:
                     for key in ("capture", "download"):

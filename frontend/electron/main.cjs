@@ -46,6 +46,7 @@ if (IS_SMOKE_TEST) {
 
 const STORAGE_CONFIG_PATH = process.env.DOUYIN_STORAGE_CONFIG_PATH
   || path.join(app.getPath('userData'), 'storage-settings.json')
+const UPDATE_RESULT_PATH = path.join(app.getPath('userData'), 'update-result.json')
 
 const hasSingleInstanceLock = IS_SMOKE_TEST || app.requestSingleInstanceLock()
 
@@ -601,6 +602,12 @@ function waitForProcessExit(proc, timeoutMs) {
 }
 
 async function prepareBackendForUpdate() {
+  if (!app.isPackaged) {
+    throw new storage.StorageConfigError(
+      '开发模式不允许启动安装程序。',
+      'UPDATE_PRODUCTION_ONLY',
+    )
+  }
   await assertBackendIdle()
   const proc = backendProc
   const payload = await postBackendPayload('/api/system/prepare-update-shutdown')
@@ -619,12 +626,43 @@ async function prepareBackendForUpdate() {
   }
 }
 
-async function launchVerifiedInstaller(installerPath) {
+async function launchVerifiedInstaller(installerPath, targetVersion) {
   launchInstallerAfterExit({
     electronPid: process.pid,
     installerPath,
+    appExePath: app.getPath('exe'),
+    installRoot: getInstallRoot(),
+    targetVersion,
+    resultPath: UPDATE_RESULT_PATH,
   })
   setImmediate(() => app.exit(0))
+}
+
+async function verifyBackendReleaseIdentity() {
+  const payload = await getBackendPayload('/api/health')
+  if (payload.product_id !== localVersionMetadata.product_id
+    || payload.version !== localVersionMetadata.version) {
+    throw new Error('Backend 版本信息与安装元数据不一致。')
+  }
+}
+
+function readUpdateResult() {
+  try {
+    if (!fs.existsSync(UPDATE_RESULT_PATH)) return null
+    return JSON.parse(fs.readFileSync(UPDATE_RESULT_PATH, 'utf8'))
+  } catch (error) {
+    console.error(`[electron] failed to read update result: ${error.message}`)
+    return null
+  }
+}
+
+function applyStartupUpdateResult() {
+  const result = readUpdateResult()
+  if (!result || !updateController) return
+  updateController.applyStartupResult(result)
+  if (result.status === 'installed' && result.target_version === localVersionMetadata.version) {
+    fs.rmSync(UPDATE_RESULT_PATH, { force: true })
+  }
 }
 
 async function recoverBackendAfterFailedUpdate() {
@@ -851,6 +889,8 @@ if (!hasSingleInstanceLock) {
       if (preparedStorage.config) {
         await verifyBackendStorage(preparedStorage.config)
       }
+      await verifyBackendReleaseIdentity()
+      applyStartupUpdateResult()
       await persistPreparedStorage(preparedStorage)
       await createWindow()
     } catch (error) {

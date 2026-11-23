@@ -1,5 +1,14 @@
 {
   "schema_version": 1,
-  "keys": [],
-  "updated_at": null
+  "keys": [
+    {
+      "key_id": "douyin-release-2026-01",
+      "algorithm": "Ed25519",
+      "public_key": "MCowBQYDK2VwAyEA14Gtm/0FpIgGe/6G1aw1MGu3SyRHvMnEjzF9hV+UdeE=",
+      "status": "active",
+      "not_before": null,
+      "not_after": null
+    }
+  ],
+  "updated_at": "2026-11-23T14:54:11.858Z"
 }

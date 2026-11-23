@@ -49,6 +49,7 @@ if ($Nsis.oneClick -ne $false) { throw 'NSIS oneClick must be false.' }
 if ($Nsis.perMachine -ne $false) { throw 'NSIS perMachine must be false.' }
 if ($Nsis.allowToChangeInstallationDirectory -ne $true) { throw 'Install directory selection must be enabled.' }
 if ($Nsis.createStartMenuShortcut -ne $true) { throw 'Start menu shortcut must be enabled.' }
+if ($Nsis.runAfterFinish -ne $false) { throw 'NSIS runAfterFinish must remain false; update restart is owned by the handoff.' }
 if ($Nsis.deleteAppDataOnUninstall -ne $false) { throw 'Uninstall must not delete application data.' }
 
 $RequiredResources = @(
@@ -80,7 +81,9 @@ if ($VersionMetadata.version -ne $Package.version) { throw 'Version metadata doe
 if ($VersionMetadata.product_id -ne $Build.appId) { throw 'Version metadata product_id does not match appId.' }
 $UpdateSource = [System.IO.File]::ReadAllText((Join-Path $UnpackedRoot 'resources\update\update-source.json'), [System.Text.Encoding]::UTF8) | ConvertFrom-Json
 if ($UpdateSource.provider -ne 'github_releases') { throw 'Unsupported update source provider.' }
-if ($UpdateSource.repository -eq 'lyx123-c/q') { throw 'Development repository cannot be used as update source.' }
+if ($UpdateSource.repository -eq 'lyx123-c/q' -and -not $UpdateSource.allow_development_repository_as_update_source) {
+  throw 'Development repository requires explicit public update-source approval.'
+}
 $UpdateKeyring = [System.IO.File]::ReadAllText((Join-Path $UnpackedRoot 'resources\update\keyring.json'), [System.Text.Encoding]::UTF8) | ConvertFrom-Json
 if ($UpdateKeyring.schema_version -ne 1) { throw 'Unsupported update keyring schema.' }
 
@@ -149,6 +152,7 @@ if ((Get-Item -LiteralPath $InstallerPath).Length -ne [long]$Manifest.installer.
   nsisPerMachine = $Nsis.perMachine
   installDirectorySelectable = $Nsis.allowToChangeInstallationDirectory
   startMenuShortcut = $Nsis.createStartMenuShortcut
+  runAfterFinish = $Nsis.runAfterFinish
   desktopShortcut = $Nsis.createDesktopShortcut
   deleteAppDataOnUninstall = $Nsis.deleteAppDataOnUninstall
   backendResource = $true

@@ -4,7 +4,7 @@
 
 This phase defines the version contract, update manifest, Ed25519 trust model, public update source configuration, file path policy, and the local version information contract. It does not download, apply, or roll back updates, and it does not ship an Updater executable.
 
-Development source repositories remain private. Public update assets must live in a separate public release repository or a controlled public HTTPS endpoint.
+The production update source is the public GitHub repository `lyx123-c/q`. The client uses only public Release assets and never embeds a GitHub Token.
 
 ## Version Contract
 
@@ -21,9 +21,9 @@ Generated fields:
 {
   "schema_version": 1,
   "product_id": "com.local.douyinworkbench",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "channel": "stable",
-  "tag": "v0.1.0",
+  "tag": "v0.2.0",
   "commit": "<git-commit>",
   "build_time": "<ISO-8601 UTC>",
   "updater_version": "0.0.0",
@@ -141,7 +141,7 @@ User data roots, video roots, Cookie/Profile, CSV, queue, logs and the bootstrap
 
 Configuration: `frontend/update/update-source.json`
 
-`repository` is intentionally empty until the separate public release repository is created and approved. An empty repository means all update checks fail with `UPDATE_SOURCE_NOT_CONFIGURED`; it never means "up to date".
+`repository` is configured as `lyx123-c/q` and explicitly approves this public development repository as the update source. If the repository becomes private or the approval flag is removed, update checks must fail safely.
 
 The client:
 
@@ -152,7 +152,7 @@ The client:
 - Rejects credentials in URLs.
 - Distinguishes `UPDATE_NETWORK_ERROR`, `UPDATE_SOURCE_NOT_FOUND`, `UPDATE_SOURCE_HTTP_ERROR` and `UPDATE_MANIFEST_INVALID`.
 
-The private development repository `lyx123-c/q` is explicitly rejected as the update repository.
+The repository must remain public. A private repository cannot be used for anonymous client updates.
 
 ## Local Version Information Interface
 
@@ -180,8 +180,11 @@ Flow:
 6. Before install, verify Backend is idle and Electron owns the process.
 7. Call `POST /api/system/prepare-update-shutdown`; FastAPI stops RuntimeServices and schedules uvicorn exit.
 8. Electron waits for the Backend process exit, without `taskkill /F`.
-9. Electron starts a hidden PowerShell handoff that waits for the Electron PID to exit, then starts the verified NSIS installer.
-10. The installer remains interactive; it does not receive `/S`, `/D`, or elevated fixed-path arguments from the app.
+9. Electron starts a hidden PowerShell handoff that waits for the Electron PID to exit.
+10. The handoff starts the verified NSIS installer with `/S` and no `/D`; the existing installation location is preserved.
+11. The handoff waits for installer exit, requires exit code 0 and verifies `resources/version-metadata.json` equals the target version.
+12. It writes `update-result.json` and starts the new application with `--post-update`.
+13. The new application verifies product/version via Backend Health and reports `UPDATE_SUCCEEDED` or `UPDATE_FAILED` in Settings.
 
 Cancel or failed download removes the `.part` file. SHA256 mismatch never creates a runnable installer.
 

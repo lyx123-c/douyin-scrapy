@@ -5,34 +5,109 @@ function escapePowerShellLiteral(value) {
   return String(value).replace(/'/g, "''")
 }
 
-function buildHandoffScript({ electronPid, installerPath, waitSeconds = 90 }) {
+function validateAbsolutePath(value, label, extension = null) {
+  if (!path.isAbsolute(String(value || ''))) {
+    throw new Error(`${label} must be absolute.`)
+  }
+  if (extension && path.extname(value).toLowerCase() !== extension) {
+    throw new Error(`${label} must use ${extension} extension.`)
+  }
+}
+
+function buildHandoffScript({
+  electronPid,
+  installerPath,
+  appExePath,
+  installRoot,
+  targetVersion,
+  resultPath,
+  waitSeconds = 90,
+  installTimeoutSeconds = 600,
+}) {
   if (!Number.isSafeInteger(electronPid) || electronPid <= 0) {
     throw new Error('Invalid Electron PID for installer handoff.')
   }
-  if (!path.isAbsolute(String(installerPath || ''))) {
-    throw new Error('Installer path must be absolute.')
-  }
-  if (path.extname(installerPath).toLowerCase() !== '.exe') {
-    throw new Error('Installer path must point to an EXE.')
+  validateAbsolutePath(installerPath, 'Installer path', '.exe')
+  validateAbsolutePath(appExePath, 'Application path', '.exe')
+  validateAbsolutePath(installRoot, 'Install root')
+  validateAbsolutePath(resultPath, 'Result path', '.json')
+  if (typeof targetVersion !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(targetVersion)) {
+    throw new Error('Invalid target version.')
   }
   if (!Number.isSafeInteger(waitSeconds) || waitSeconds < 5 || waitSeconds > 600) {
     throw new Error('Invalid installer handoff timeout.')
   }
+  if (!Number.isSafeInteger(installTimeoutSeconds) || installTimeoutSeconds < 30 || installTimeoutSeconds > 3600) {
+    throw new Error('Invalid installer timeout.')
+  }
+
+  const installDir = path.resolve(installRoot)
+  const versionMetadataPath = path.join(installDir, 'resources', 'version-metadata.json')
 
   return [
     "$ErrorActionPreference = 'Stop'",
     `$targetPid = ${electronPid}`,
     `$installer = '${escapePowerShellLiteral(path.resolve(installerPath))}'`,
+    `$appExe = '${escapePowerShellLiteral(path.resolve(appExePath))}'`,
+    `$installRoot = '${escapePowerShellLiteral(installDir)}'`,
+    `$targetVersion = '${escapePowerShellLiteral(targetVersion)}'`,
+    `$resultPath = '${escapePowerShellLiteral(path.resolve(resultPath))}'`,
+    `$versionMetadataPath = '${escapePowerShellLiteral(versionMetadataPath)}'`,
     `$waitSeconds = ${waitSeconds}`,
+    `$installTimeoutSeconds = ${installTimeoutSeconds}`,
+    '$utf8NoBom = New-Object System.Text.UTF8Encoding($false)',
+    'function Write-UpdateResult([string]$status, [string]$stage, [string]$message, $installerExitCode, $actualVersion) {',
+    '  $payload = [ordered]@{',
+    '    schema_version = 1',
+    '    status = $status',
+    '    stage = $stage',
+    '    message = $message',
+    '    target_version = $targetVersion',
+    '    actual_version = $actualVersion',
+    '    installer_exit_code = $installerExitCode',
+    '    install_root = $installRoot',
+    '    updated_at = (Get-Date).ToUniversalTime().ToString("o")',
+    '  }',
+    '  [System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($resultPath)) | Out-Null',
+    '  [System.IO.File]::WriteAllText($resultPath, ($payload | ConvertTo-Json -Depth 5), $utf8NoBom)',
+    '}',
+    "Write-UpdateResult 'waiting' 'wait_electron_exit' '等待旧版本完全退出。' $null $null",
     '$target = Get-Process -Id $targetPid -ErrorAction SilentlyContinue',
     'if ($target) {',
     '  try {',
     '    Wait-Process -Id $targetPid -Timeout $waitSeconds -ErrorAction Stop',
     '  } catch {',
-    '    if (Get-Process -Id $targetPid -ErrorAction SilentlyContinue) { exit 2 }',
+    '    if (Get-Process -Id $targetPid -ErrorAction SilentlyContinue) {',
+    "      Write-UpdateResult 'failed' 'electron_exit_timeout' 'Electron 未在超时前退出。' $null $null",
+    '      exit 2',
+    '    }',
     '  }',
     '}',
-    "Start-Process -FilePath $installer -ErrorAction Stop",
+    "Write-UpdateResult 'installing' 'installer_running' '正在执行 NSIS 覆盖安装。' $null $null",
+    '$installerProcess = Start-Process -FilePath $installer -ArgumentList "/S" -PassThru -ErrorAction Stop',
+    'if (-not $installerProcess.WaitForExit($installTimeoutSeconds * 1000)) {',
+    "  Write-UpdateResult 'failed' 'installer_timeout' 'NSIS 安装程序超时。' $null $null",
+    '  exit 3',
+    '}',
+    '$installerExitCode = $installerProcess.ExitCode',
+    'if ($installerExitCode -ne 0) {',
+    "  Write-UpdateResult 'failed' 'installer_exit_nonzero' 'NSIS 安装程序返回非零退出码。' $installerExitCode $null",
+    '  if (Test-Path -LiteralPath $appExe) { Start-Process -FilePath $appExe -ArgumentList "--update-recovery" }',
+    '  exit 4',
+    '}',
+    'if (-not (Test-Path -LiteralPath $appExe) -or -not (Test-Path -LiteralPath $versionMetadataPath)) {',
+    "  Write-UpdateResult 'failed' 'installed_files_missing' '安装后未找到应用或版本元数据。' $installerExitCode $null",
+    '  if (Test-Path -LiteralPath $appExe) { Start-Process -FilePath $appExe -ArgumentList "--update-recovery" }',
+    '  exit 5',
+    '}',
+    '$actualVersion = (Get-Content -LiteralPath $versionMetadataPath -Raw | ConvertFrom-Json).version',
+    'if ($actualVersion -ne $targetVersion) {',
+    "  Write-UpdateResult 'failed' 'installed_version_mismatch' '安装后的程序版本与目标版本不一致。' $installerExitCode $actualVersion",
+    '  if (Test-Path -LiteralPath $appExe) { Start-Process -FilePath $appExe -ArgumentList "--update-recovery" }',
+    '  exit 6',
+    '}',
+    "Write-UpdateResult 'installed' 'restart_pending' '安装完成，准备重启新版本。' $installerExitCode $actualVersion",
+    'Start-Process -FilePath $appExe -ArgumentList "--post-update"',
   ].join('\r\n')
 }
 
@@ -43,13 +118,24 @@ function encodePowerShell(script) {
 function launchInstallerAfterExit({
   electronPid,
   installerPath,
+  appExePath,
+  installRoot,
+  targetVersion,
+  resultPath,
   spawnImpl = spawn,
   platform = process.platform,
 }) {
   if (platform !== 'win32') {
     throw new Error('Installer handoff is only supported on Windows.')
   }
-  const script = buildHandoffScript({ electronPid, installerPath })
+  const script = buildHandoffScript({
+    electronPid,
+    installerPath,
+    appExePath,
+    installRoot,
+    targetVersion,
+    resultPath,
+  })
   const executable = path.join(
     process.env.SystemRoot || 'C:\\Windows',
     'System32',

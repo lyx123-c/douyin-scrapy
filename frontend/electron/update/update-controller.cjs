@@ -19,6 +19,8 @@ const UPDATE_STATUSES = Object.freeze({
   DOWNLOAD_FAILED: 'DOWNLOAD_FAILED',
   DOWNLOAD_CANCELLED: 'DOWNLOAD_CANCELLED',
   READY_TO_INSTALL: 'READY_TO_INSTALL',
+  UPDATE_SUCCEEDED: 'UPDATE_SUCCEEDED',
+  UPDATE_FAILED: 'UPDATE_FAILED',
   INSTALLING: 'INSTALLING',
   INSTALL_FAILED: 'INSTALL_FAILED',
 })
@@ -125,6 +127,30 @@ class UpdateController {
 
   getInstallerPath() {
     return this.installerPath
+  }
+
+  applyStartupResult(result) {
+    if (!result || result.schema_version !== 1) return null
+    if (result.status === 'installed' && result.target_version === this.currentVersion) {
+      return this.setState(UPDATE_STATUSES.UPDATE_SUCCEEDED, {
+        latest_version: this.currentVersion,
+        published_at: result.updated_at || null,
+        package_size: null,
+        package_type: 'full',
+        percent: 100,
+        error_code: null,
+        error_message: null,
+      })
+    }
+    if (result.status === 'failed' || result.status === 'installed') {
+      return this.setState(UPDATE_STATUSES.UPDATE_FAILED, {
+        latest_version: result.target_version || null,
+        error_code: result.stage || 'UPDATE_INSTALL_FAILED',
+        error_message: result.message || '更新安装失败。',
+        can_cancel: false,
+      })
+    }
+    return null
   }
 
   setState(status, patch = {}) {
@@ -318,7 +344,7 @@ class UpdateController {
         expectedSha256: this.selectedPackage.sha256,
       })
       await this.prepareInstall()
-      await this.launchInstaller(this.installerPath)
+      await this.launchInstaller(this.installerPath, this.latestManifest.version)
       return this.getState()
     } catch (error) {
       if (typeof this.recoverInstall === 'function') {

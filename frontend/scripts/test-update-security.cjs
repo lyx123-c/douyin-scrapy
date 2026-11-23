@@ -334,6 +334,17 @@ test('update source distinguishes network failures from not-found and never uses
     }),
     (error) => error.code === 'UPDATE_SOURCE_REPOSITORY_CONFLICT',
   )
+
+  const explicitlyApproved = validateUpdateSourceConfig({
+    schema_version: 1,
+    provider: 'github_releases',
+    repository: 'lyx123-c/q',
+    allow_development_repository_as_update_source: true,
+    allowed_manifest_hosts: ['github.com'],
+    allowed_asset_hosts: ALLOWED_ASSET_HOSTS,
+    request_timeout_ms: 5000,
+  })
+  assert.equal(explicitlyApproved.repository, 'lyx123-c/q')
 })
 
 test('key generation and manifest signing CLIs produce a verifiable signature', (t) => {

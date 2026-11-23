@@ -48,10 +48,13 @@ function validateUpdateSourceConfig(config, { developmentRepository = 'lyx123-c/
       throw new UpdateProtocolError('Update repository must use owner/repo format.', 'UPDATE_SOURCE_CONFIG_INVALID')
     }
     if (config.repository.toLowerCase() === String(developmentRepository).toLowerCase()) {
-      throw new UpdateProtocolError(
-        'The development repository cannot be used as the public update repository.',
-        'UPDATE_SOURCE_REPOSITORY_CONFLICT',
-      )
+      const explicitlyAllowed = config.allow_development_repository_as_update_source === true
+      if (!explicitlyAllowed) {
+        throw new UpdateProtocolError(
+          'The development repository requires explicit public-update-source approval.',
+          'UPDATE_SOURCE_REPOSITORY_CONFLICT',
+        )
+      }
     }
   }
   if (!Array.isArray(config.allowed_manifest_hosts) || config.allowed_manifest_hosts.length === 0) {

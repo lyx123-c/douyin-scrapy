@@ -3,7 +3,8 @@
   "provider": "github_releases",
   "manifest_asset": "stable.json",
   "signature_asset": "stable.json.sig",
-  "repository": "",
+  "repository": "lyx123-c/q",
+  "allow_development_repository_as_update_source": true,
   "allowed_manifest_hosts": [
     "github.com",
     "objects.githubusercontent.com",

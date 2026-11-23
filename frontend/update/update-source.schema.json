@@ -25,6 +25,9 @@
       "type": "string",
       "pattern": "^$|^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
     },
+    "allow_development_repository_as_update_source": {
+      "type": "boolean"
+    },
     "allowed_manifest_hosts": {
       "type": "array",
       "minItems": 1,

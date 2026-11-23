@@ -13,9 +13,12 @@
 - `npm run release:manifest`：生成发行清单和第三方许可证清单。
 - `npm run release:verify`：验证 Installer、NSIS 策略和生产资源。
 - `npm run release:package`：执行完整发布构建、清单生成和发行验证。
+- `npm run release:publish`：使用环境变量中的 GitHub Token 上传并验证正式 Release 资产。
 - `npm run storage:test`：验证存储配置、目录约束、复制与 SHA256 校验。
 - `npm run version:metadata`：生成 Electron、Backend 与发布系统共用的版本元数据。
 - `npm run update:test`：执行更新 Manifest、签名、防重放和路径安全测试。
+- `npm run update:manifest`：从正式应用目录和 NSIS 安装包生成未签名更新 Manifest。
+- `npm run update:sign`：使用仓库外保存的 Ed25519 私钥签名 Manifest。
 
 发布、签名、许可证、安装和卸载治理详见 [RELEASE.md](RELEASE.md)。
 更新协议、Ed25519 信任模型和公共 Release 配置详见 [UPDATE-PROTOCOL.md](UPDATE-PROTOCOL.md)。

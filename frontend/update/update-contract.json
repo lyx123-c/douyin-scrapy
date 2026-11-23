@@ -7,7 +7,7 @@
   ],
   "manifest_schema_version": 1,
   "updater_version": "0.0.0",
-  "update_repository": "",
+  "update_repository": "lyx123-c/q",
   "development_repository": "lyx123-c/q",
   "manifest_asset": "stable.json",
   "signature_asset": "stable.json.sig"

@@ -1,7 +1,7 @@
 {
   "name": "douyin-workbench-frontend",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Windows 本地抖音视频采集、下载与任务管理工作台。",
   "author": "Douyin Video Workbench",
   "type": "module",
@@ -15,6 +15,8 @@
     "build": "npm run version:metadata && vite build",
     "preview": "vite preview",
     "update:test": "node --test scripts/test-update-security.cjs scripts/test-update-download.cjs",
+    "update:manifest": "node scripts/generate-update-manifest.cjs",
+    "update:sign": "node scripts/sign-update-manifest.cjs",
     "storage:test": "node --test scripts/test-storage-config.cjs",
     "electron:start": "npm run version:metadata && node scripts/start-electron-dev.cjs",
     "electron:dev": "npm run version:metadata && node scripts/start-electron-dev.cjs",
@@ -25,6 +27,7 @@
     "electron:package": "npm run ffmpeg:verify && npm run backend:build && npm run build && electron-builder --win nsis",
     "release:manifest": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate-release-manifest.ps1",
     "release:verify": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-release.ps1",
+    "release:publish": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish-github-release.ps1",
     "release:package": "npm run electron:package && npm run release:manifest && npm run release:verify"
   },
   "dependencies": {
@@ -118,7 +121,7 @@
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "installerHeaderIcon": "build/icon.ico",
-      "runAfterFinish": true,
+      "runAfterFinish": false,
       "deleteAppDataOnUninstall": false
     },
     "artifactName": "${productName}-${version}-${arch}.${ext}"

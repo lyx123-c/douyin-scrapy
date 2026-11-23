@@ -236,8 +236,13 @@ def main() -> int:
         raise RuntimeError("Private key material must never be packaged.")
     if update_source.get("provider") != "github_releases":
         raise RuntimeError("Unsupported update source provider.")
-    if update_source.get("repository") == "lyx123-c/q":
-        raise RuntimeError("Development repository cannot be used as the update source.")
+    if (
+        update_source.get("repository") == "lyx123-c/q"
+        and update_source.get("allow_development_repository_as_update_source") is not True
+    ):
+        raise RuntimeError(
+            "Development repository requires explicit public update-source approval."
+        )
 
     python_packages = merge_python_licenses(
         direct_python_licenses(),

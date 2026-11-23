@@ -52,9 +52,9 @@ const updateSourceText = computed(() => versionInfo.value?.update_source?.config
 const isDownloading = computed(() => updateStatus.value === 'DOWNLOADING')
 const updateStatusType = computed(() => {
   if (['UPDATE_AVAILABLE', 'READY_TO_INSTALL'].includes(updateStatus.value)) return 'warning'
-  if (['UP_TO_DATE', 'INSTALLING'].includes(updateStatus.value)) return 'success'
+  if (['UP_TO_DATE', 'INSTALLING', 'UPDATE_SUCCEEDED'].includes(updateStatus.value)) return 'success'
   if (['SOURCE_NOT_CONFIGURED', 'NETWORK_ERROR', 'DOWNLOAD_CANCELLED'].includes(updateStatus.value)) return 'info'
-  if (['MANIFEST_INVALID', 'SIGNATURE_INVALID', 'VERSION_UNSUPPORTED', 'DOWNLOAD_FAILED', 'INSTALL_FAILED'].includes(updateStatus.value)) return 'danger'
+  if (['MANIFEST_INVALID', 'SIGNATURE_INVALID', 'VERSION_UNSUPPORTED', 'DOWNLOAD_FAILED', 'INSTALL_FAILED', 'UPDATE_FAILED'].includes(updateStatus.value)) return 'danger'
   return 'info'
 })
 const updateStatusText = computed(() => ({
@@ -73,6 +73,8 @@ const updateStatusText = computed(() => ({
   READY_TO_INSTALL: '安装包已完成签名、大小和 SHA256 校验。',
   INSTALLING: '正在安全关闭软件并启动安装程序…',
   INSTALL_FAILED: '安装启动失败。',
+  UPDATE_SUCCEEDED: '升级完成，新版本已启动并通过 Backend 健康检查。',
+  UPDATE_FAILED: '升级未完成，请查看错误信息或重新启动软件。',
 }[updateStatus.value] || '未知更新状态。'))
 
 function formatBytes(value) {
@@ -136,7 +138,7 @@ async function installUpdate() {
   if (updateActionBusy.value) return
   try {
     await ElMessageBox.confirm(
-      '软件将在确认没有运行中的抓取或下载任务后安全关闭，并启动已验证的 NSIS 安装程序。',
+      '软件将检查任务空闲状态，安全关闭 Backend 和 Electron，自动完成 NSIS 覆盖安装并启动新版本。升级期间请勿强制结束进程。',
       '退出软件并安装',
       { type: 'warning', confirmButtonText: '退出并安装', cancelButtonText: '取消' },
     )
@@ -475,9 +477,9 @@ onBeforeUnmount(() => {
 
       <div v-if="updateStatus === 'READY_TO_INSTALL'" class="ready-install">
         <ElTag type="success" effect="plain">安装包已验证</ElTag>
-        <span>退出软件后将启动完整 NSIS 安装程序，用户可确认原安装目录并取消安装。</span>
+        <span>点击后软件将自动关闭、覆盖安装并重启新版本，无需再次操作。</span>
         <ElButton type="primary" :loading="updateActionBusy === 'install'" @click="installUpdate">
-          退出软件并安装
+          安装更新
         </ElButton>
       </div>
 

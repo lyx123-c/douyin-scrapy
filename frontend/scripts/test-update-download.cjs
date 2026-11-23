@@ -242,6 +242,42 @@ test('installer launch failure keeps the verified package and requests backend r
   assert.ok(fs.existsSync(installerPath))
 })
 
+test('startup update result reports success or failure after restart', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'douyin-u12-result-'))
+  try {
+    const key = makeKey()
+    const controller = new UpdateController({
+      currentVersion: '1.3.0',
+      currentUpdaterVersion: '0.1.0',
+      productId: 'com.local.douyinworkbench',
+      sourceConfig: { configured: false, allowed_asset_hosts: [] },
+      keyring: { schema_version: 1, keys: [key.entry], updated_at: null },
+      tempRoot,
+      prepareInstall: async () => {},
+      launchInstaller: async () => {},
+    })
+    controller.applyStartupResult({
+      schema_version: 1,
+      status: 'installed',
+      target_version: '1.3.0',
+      actual_version: '1.3.0',
+      updated_at: '2026-11-23T10:00:00.000Z',
+    })
+    assert.equal(controller.getState().status, UPDATE_STATUSES.UPDATE_SUCCEEDED)
+    controller.applyStartupResult({
+      schema_version: 1,
+      status: 'failed',
+      stage: 'installed_version_mismatch',
+      message: 'version mismatch',
+      target_version: '1.4.0',
+    })
+    assert.equal(controller.getState().status, UPDATE_STATUSES.UPDATE_FAILED)
+    assert.equal(controller.getState().error_code, 'installed_version_mismatch')
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true })
+  }
+})
+
 test('unconfigured source and invalid signatures surface safe controller states', async () => {
   const key = makeKey()
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'douyin-u12-state-'))
@@ -300,8 +336,16 @@ test('installer handoff waits for the Electron process and never uses a fixed sl
   const script = buildHandoffScript({
     electronPid: 1234,
     installerPath: 'C:\\Temp\\verified-installer.exe',
+    appExePath: 'C:\\Temp\\DouyinWorkbench\\DouyinWorkbench.exe',
+    installRoot: 'C:\\Temp\\DouyinWorkbench',
+    targetVersion: '0.2.0',
+    resultPath: 'C:\\Temp\\update-result.json',
   })
   assert.match(script, /Wait-Process -Id \$targetPid -Timeout \$waitSeconds/)
+  assert.match(script, /ArgumentList "\/S"/)
+  assert.match(script, /WaitForExit/)
+  assert.match(script, /\$actualVersion -ne \$targetVersion/)
+  assert.match(script, /Start-Process -FilePath \$appExe -ArgumentList "--post-update"/)
   assert.match(script, /Start-Process -FilePath \$installer/)
   assert.doesNotMatch(script, /Start-Sleep|timeout\s+\/t/i)
 })

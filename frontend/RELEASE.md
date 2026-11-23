@@ -31,7 +31,7 @@ Expected output:
 
 ```text
 release/
-├── 抖音视频工作台-0.1.0-x64.exe
+├── 抖音视频工作台-0.2.0-x64.exe
 ├── RELEASE-MANIFEST.json
 ├── THIRD-PARTY-NOTICES.txt
 └── win-unpacked/
@@ -54,7 +54,7 @@ Production Backend API routing:
 - First launch requires valid, writable application-data and video roots before initialisation completes.
 - Configuration survives restart and upgrade; uninstall keeps independent user data and videos.
 - Start menu and desktop shortcuts enabled.
-- Application starts after interactive installation by default.
+- `runAfterFinish=false`; first install is launched by the user, while one-click updates explicitly restart through the verified handoff.
 - Silent install supports `/S /D=<absolute-install-directory>`.
 - `deleteAppDataOnUninstall` must remain `false`.
 - Do not add custom NSIS scripts that modify PATH, system Python, system FFmpeg or browser settings.
@@ -76,7 +76,7 @@ Install, upgrade and uninstall tests must use temporary user-data directories. N
 
 ## Signing
 
-U1.1 adds Ed25519 update-manifest signing and a public keyring protocol. The repository keyring intentionally has no active production key yet; until a public update repository and release keys are provisioned, `releaseReadiness.updateProtocolReady` remains false.
+U1.3 configures production update-manifest signing with Ed25519 key `douyin-release-2026-01`. Only its public key is committed in `frontend/update/keyring.json`; the private key is stored outside the repository and must never be packaged or uploaded.
 
 Code signing is not configured in this repository.
 
@@ -106,11 +106,11 @@ Before public distribution:
 
 U1.1 does not ship `Updater.exe`, does not download updates and does not replace program files. The Launcher/versioned-directory/Updater implementation starts in U1.2 and U1.3.
 
-U1.2 adds interactive full-NSIS updates. Electron stops accepting the install handoff unless Backend is idle, asks FastAPI to stop RuntimeServices, waits for the owned Backend process to exit, then a short-lived PowerShell handoff waits for the Electron PID and starts the verified installer. It does not use silent install arguments or `/D`.
+U1.3 completes one-click full-NSIS updates. Electron requires an idle Backend, stops RuntimeServices through the FastAPI shutdown endpoint, waits for the owned Backend process to exit, and launches a short-lived PowerShell handoff. After the Electron PID exits, the handoff runs the verified NSIS installer with `/S` and no `/D`, verifies installer exit code and installed version metadata, writes `update-result.json`, and restarts the new application. The restarted application rechecks Backend Health and reports success or failure in Settings.
 
-The public update repository and production signing key remain intentionally unconfigured. Empty keyrings reject all update manifests.
+The public update source is `lyx123-c/q`. It must remain public for anonymous client updates. The existing legacy Release tagged `0.1` is not a valid update source and is not overwritten.
 
-The NSIS installer uses the stable product/app identity. Same-version reinstall and a test `0.1.1` over `0.1.0` were validated with unchanged user-data files.
+The NSIS installer uses the stable product/app identity. The official `v0.2.0` release upgrades an isolated `0.1.0` baseline in-place while preserving external user data.
 
 Do not introduce a second installer framework or automatic updater without a separate design and security review.
 

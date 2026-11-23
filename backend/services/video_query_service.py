@@ -119,7 +119,7 @@ class VideoQueryService:
 
         items = []
         if not page_frame.empty:
-            items = page_frame[
+            records = page_frame[
                 [
                     "video_id",
                     "title",
@@ -129,6 +129,13 @@ class VideoQueryService:
                     "task_id",
                 ]
             ].to_dict(orient="records")
+            items = [
+                {
+                    **record,
+                    "task_id": _text(record.get("task_id")) or None,
+                }
+                for record in records
+            ]
 
         return {
             "items": items,

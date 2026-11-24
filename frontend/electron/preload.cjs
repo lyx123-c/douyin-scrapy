@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld(
     updates: Object.freeze({
       getLocalInfo: () => ipcRenderer.invoke('updates:get-local-info'),
       getState: () => ipcRenderer.invoke('updates:get-state'),
+      revealInstaller: () => ipcRenderer.invoke('updates:reveal-installer'),
       check: () => ipcRenderer.invoke('updates:check'),
       startDownload: () => ipcRenderer.invoke('updates:start-download'),
       cancelDownload: () => ipcRenderer.invoke('updates:cancel-download'),

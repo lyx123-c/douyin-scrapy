@@ -153,6 +153,7 @@ test('full installer update checks, downloads, verifies and becomes installable'
   const ready = await controller.startDownload()
   assert.equal(ready.status, UPDATE_STATUSES.READY_TO_INSTALL)
   assert.equal(ready.percent, 100)
+  assert.equal(ready.installer_path, controller.getInstallerPath())
   assert.ok(fs.existsSync(controller.getInstallerPath()))
   assert.equal(path.dirname(controller.getInstallerPath()), tempRoot)
   assert.equal(path.basename(controller.getInstallerPath()), 'DouyinWorkbench-1.3.0-x64.exe')
@@ -395,6 +396,7 @@ test('SHA256 mismatch never creates a runnable installer', async (t) => {
   const failed = await controller.startDownload()
   assert.equal(failed.status, UPDATE_STATUSES.DOWNLOAD_FAILED)
   assert.equal(failed.error_code, 'UPDATE_ARTIFACT_HASH_MISMATCH')
+  assert.equal(failed.installer_path, null)
   assert.equal(controller.getInstallerPath(), null)
   assert.equal(
     fs.readdirSync(tempRoot).some((name) => name.endsWith('.exe') || name.endsWith('.part')),
@@ -444,6 +446,7 @@ test('cancelling a download leaves no partial or executable update package', asy
   assert.equal((await controller.check()).status, UPDATE_STATUSES.UPDATE_AVAILABLE)
   const result = await controller.startDownload()
   assert.equal(result.status, UPDATE_STATUSES.DOWNLOAD_CANCELLED)
+  assert.equal(result.installer_path, null)
   assert.equal(controller.getInstallerPath(), null)
   assert.equal(
     fs.readdirSync(tempRoot).some((name) => name.endsWith('.exe') || name.endsWith('.part')),

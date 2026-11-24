@@ -19,6 +19,7 @@ import {
   getUpdateState,
   onUpdateStateChanged,
   quitAndInstallUpdate,
+  revealUpdateInstaller,
   startUpdateDownload,
   updateBridgeAvailable,
 } from '../api/updates'
@@ -49,6 +50,7 @@ const videoRoot = computed(
 const installRoot = computed(() => managed.value?.installRoot || '未知')
 
 const updateStatus = computed(() => updateState.value?.status || 'IDLE')
+const installerPath = computed(() => updateState.value?.installer_path || '')
 const tagText = computed(() => versionInfo.value?.tag || '未标记')
 const commitShort = computed(() => versionInfo.value?.commit ? versionInfo.value.commit.slice(0, 12) : '未知')
 const updateSourceText = computed(() => versionInfo.value?.update_source?.configured ? versionInfo.value.update_source.repository : '未配置')
@@ -164,6 +166,14 @@ async function confirmInstall() {
     installError.value = error.message || '启动安装程序失败。'
     ElMessage.error(installError.value)
     updateActionBusy.value = ''
+  }
+}
+
+async function revealInstaller() {
+  try {
+    await revealUpdateInstaller()
+  } catch (error) {
+    ElMessage.error(error.message || '无法定位安装包。')
   }
 }
 
@@ -500,6 +510,13 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="updateStatus === 'READY_TO_INSTALL'" class="ready-install">
+        <div v-if="installerPath" class="installer-location">
+          <div>
+            <span>安装包位置</span>
+            <strong>{{ installerPath }}</strong>
+          </div>
+          <ElButton size="small" @click="revealInstaller">在文件夹中显示</ElButton>
+        </div>
         <template v-if="!installConfirmVisible">
           <ElTag type="success" effect="plain">安装包已验证</ElTag>
           <span>点击后软件将自动关闭、覆盖安装并重启新版本。</span>
@@ -762,6 +779,37 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+.installer-location {
+  display: flex;
+  flex: 1 0 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.installer-location > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.installer-location span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.installer-location strong {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+}
+
 .ready-install__actions {
   display: flex;
   align-items: center;
@@ -780,6 +828,11 @@ onBeforeUnmount(() => {
 
   .update-details {
     grid-template-columns: 1fr;
+  }
+
+  .installer-location {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .storage-row,

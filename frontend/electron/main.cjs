@@ -678,6 +678,14 @@ function registerUpdateIpc() {
     { updateSource: updateSourceConfig },
   ))
   ipcMain.handle('updates:get-state', () => updateController?.getState() || null)
+  ipcMain.handle('updates:reveal-installer', () => {
+    const installerPath = updateController?.getInstallerPath()
+    if (!installerPath || !fs.existsSync(installerPath)) {
+      throw new Error('更新安装包不存在或尚未下载完成。')
+    }
+    shell.showItemInFolder(installerPath)
+    return { path: installerPath }
+  })
   ipcMain.handle('updates:check', () => {
     if (!updateController) throw new Error('更新控制器尚未初始化。')
     return updateController.check()

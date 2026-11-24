@@ -15,6 +15,10 @@ export function getUpdateState() {
   return requireBridge().getState()
 }
 
+export function revealUpdateInstaller() {
+  return requireBridge().revealInstaller()
+}
+
 export function checkForUpdates() {
   return requireBridge().check()
 }
@@ -41,6 +45,7 @@ export default {
   getLocalVersionInfo,
   getUpdateState,
   onUpdateStateChanged,
+  revealUpdateInstaller,
   quitAndInstallUpdate,
   startUpdateDownload,
   updateBridgeAvailable,

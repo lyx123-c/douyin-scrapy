@@ -110,6 +110,7 @@ class UpdateController {
       release_notes: null,
       package_size: null,
       package_type: null,
+      installer_path: null,
       downloaded_bytes: 0,
       total_bytes: 0,
       percent: 0,
@@ -177,6 +178,7 @@ class UpdateController {
       release_notes: null,
       package_size: null,
       package_type: null,
+      installer_path: null,
       downloaded_bytes: 0,
       total_bytes: 0,
       percent: 0,
@@ -300,6 +302,7 @@ class UpdateController {
       })
       this.installerPath = result.path
       this.setState(UPDATE_STATUSES.READY_TO_INSTALL, {
+        installer_path: result.path,
         downloaded_bytes: result.size,
         total_bytes: result.size,
         percent: 100,
@@ -326,6 +329,7 @@ class UpdateController {
         cancelled ? UPDATE_STATUSES.DOWNLOAD_CANCELLED : UPDATE_STATUSES.DOWNLOAD_FAILED,
         {
           can_cancel: false,
+          installer_path: null,
           error_code: error?.code || 'UPDATE_DOWNLOAD_FAILED',
           error_message: error?.message || String(error),
         },

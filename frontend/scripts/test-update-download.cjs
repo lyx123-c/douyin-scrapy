@@ -154,6 +154,8 @@ test('full installer update checks, downloads, verifies and becomes installable'
   assert.equal(ready.status, UPDATE_STATUSES.READY_TO_INSTALL)
   assert.equal(ready.percent, 100)
   assert.ok(fs.existsSync(controller.getInstallerPath()))
+  assert.equal(path.dirname(controller.getInstallerPath()), tempRoot)
+  assert.equal(path.basename(controller.getInstallerPath()), 'DouyinWorkbench-1.3.0-x64.exe')
   assert.equal(fs.readdirSync(path.dirname(controller.getInstallerPath())).some((name) => name.endsWith('.part')), false)
 
   await controller.install()
@@ -394,8 +396,10 @@ test('SHA256 mismatch never creates a runnable installer', async (t) => {
   assert.equal(failed.status, UPDATE_STATUSES.DOWNLOAD_FAILED)
   assert.equal(failed.error_code, 'UPDATE_ARTIFACT_HASH_MISMATCH')
   assert.equal(controller.getInstallerPath(), null)
-  const versionDir = path.join(tempRoot, '1.3.0')
-  assert.equal(fs.existsSync(versionDir), false)
+  assert.equal(
+    fs.readdirSync(tempRoot).some((name) => name.endsWith('.exe') || name.endsWith('.part')),
+    false,
+  )
 })
 
 test('cancelling a download leaves no partial or executable update package', async (t) => {
@@ -441,7 +445,10 @@ test('cancelling a download leaves no partial or executable update package', asy
   const result = await controller.startDownload()
   assert.equal(result.status, UPDATE_STATUSES.DOWNLOAD_CANCELLED)
   assert.equal(controller.getInstallerPath(), null)
-  assert.equal(fs.existsSync(path.join(tempRoot, '1.3.0')), false)
+  assert.equal(
+    fs.readdirSync(tempRoot).some((name) => name.endsWith('.exe') || name.endsWith('.part')),
+    false,
+  )
 })
 
 test('installer launch failure keeps the verified package and requests backend recovery', async (t) => {

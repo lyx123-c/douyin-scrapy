@@ -877,7 +877,7 @@ if (!hasSingleInstanceLock) {
         channel: localVersionMetadata.channel,
         sourceConfig: updateSourceConfig,
         keyring: updateKeyring,
-        tempRoot: path.join(app.getPath('temp'), 'douyin-workbench-updates'),
+        tempRoot: getInstallRoot(),
         onStateChanged: broadcastUpdateState,
         prepareInstall: prepareBackendForUpdate,
         recoverInstall: recoverBackendAfterFailedUpdate,

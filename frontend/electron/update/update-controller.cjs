@@ -281,7 +281,7 @@ class UpdateController {
         url: this.selectedPackage.url,
         expectedSize: this.selectedPackage.size,
         expectedSha256: this.selectedPackage.sha256,
-        tempRoot: path.join(this.tempRoot, this.latestManifest.version),
+        tempRoot: this.tempRoot,
         filename,
         allowedHosts: this.sourceConfig.allowed_asset_hosts,
         allowInsecureLocalhost: this.allowInsecureLocalhost,

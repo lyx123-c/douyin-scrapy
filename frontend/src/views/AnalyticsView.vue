@@ -4,7 +4,7 @@ import { Refresh } from '@element-plus/icons-vue'
 
 import { getAnalytics } from '../api/analytics'
 import { getVideoSummary } from '../api/videos'
-import AppHeader from '../components/AppHeader.vue'
+import PageHeader from '../components/PageHeader.vue'
 
 const summary = reactive({
   total: 0,
@@ -211,24 +211,19 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app-shell">
-    <AppHeader />
-
-    <main class="workspace workspace--analytics">
-      <section class="analytics-heading">
-        <div>
-          <p class="section-kicker">下载数据</p>
-          <h2>统计分析</h2>
-          <p class="analytics-subtitle">基于已下载视频的点赞、评论和作者数据进行统计。</p>
-        </div>
-        <div class="heading-actions">
+  <div class="page-view">
+    <PageHeader
+      title="统计分析"
+      description="基于已下载视频的点赞、评论和作者数据进行统计。"
+    >
+      <template #actions>
           <ElTag type="info" effect="plain">统计样本 {{ analyticsTotal }} 条</ElTag>
           <span class="last-updated">更新于 {{ lastUpdatedLabel }}</span>
           <ElButton :icon="Refresh" :loading="loading" @click="refreshData({ manual: true })">
             刷新
           </ElButton>
-        </div>
-      </section>
+      </template>
+    </PageHeader>
 
       <ElAlert
         v-if="errorMessage"
@@ -263,7 +258,7 @@ onUnmounted(() => {
         <article class="chart-card chart-card--top">
           <header class="chart-heading">
             <div>
-              <h3>点赞量 Top 10 视频</h3>
+              <h2>点赞量 Top 10 视频</h2>
               <p>按点赞量降序排列。</p>
             </div>
             <span>{{ topDiggItems.length }} 条</span>
@@ -284,7 +279,7 @@ onUnmounted(() => {
         <article class="chart-card chart-card--scatter">
           <header class="chart-heading">
             <div>
-              <h3>点赞量与评论量相关性</h3>
+              <h2>点赞量与评论量相关性</h2>
               <p>每个点代表一条已下载视频。</p>
             </div>
             <span>{{ scatterPoints.length }} 个点</span>
@@ -355,7 +350,7 @@ onUnmounted(() => {
         <article class="chart-card chart-card--authors">
           <header class="chart-heading">
             <div>
-              <h3>各作者平均点赞量与评论量对比</h3>
+              <h2>各作者平均点赞量与评论量对比</h2>
               <p>按作者平均点赞量降序排列；仅作者数量大于 1 时显示。</p>
             </div>
             <span>{{ authorStats.length }} 位作者</span>
@@ -384,54 +379,13 @@ onUnmounted(() => {
       </section>
 
       <section v-else-if="!loading" class="empty-state">
-        <h3>暂无下载统计数据</h3>
+        <h2>暂无下载统计数据</h2>
         <p>下载完成并写入统计记录后，这里会显示点赞、评论和作者统计图。</p>
       </section>
-    </main>
   </div>
 </template>
 
 <style scoped>
-.workspace--analytics {
-  width: min(1320px, calc(100% - 40px));
-}
-
-.analytics-heading {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 20px;
-}
-
-.analytics-heading .section-kicker {
-  color: #748187;
-}
-
-.analytics-heading h2 {
-  margin: 0;
-  color: var(--ink);
-  font-size: 28px;
-  letter-spacing: 0;
-}
-
-.analytics-subtitle {
-  margin: 7px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.heading-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.last-updated {
-  color: var(--muted);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
 
 .analytics-alert {
   margin-bottom: 16px;
@@ -448,7 +402,7 @@ onUnmounted(() => {
   padding: 17px 18px;
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 
 .summary-card span {
@@ -466,8 +420,8 @@ onUnmounted(() => {
 }
 
 .summary-card[data-tone="teal"] strong { color: var(--teal); }
-.summary-card[data-tone="amber"] strong { color: #b87915; }
-.summary-card[data-tone="coral"] strong { color: #c94f4a; }
+.summary-card[data-tone="amber"] strong { color: var(--warning); }
+.summary-card[data-tone="coral"] strong { color: var(--error); }
 
 .queue-meta {
   display: flex;
@@ -493,7 +447,7 @@ onUnmounted(() => {
   padding: 18px;
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 
 .chart-card--authors {
@@ -508,8 +462,8 @@ onUnmounted(() => {
   margin-bottom: 16px;
 }
 
-.chart-heading h3,
-.empty-state h3 {
+.chart-heading h2,
+.empty-state h2 {
   margin: 0;
   color: var(--ink);
   font-size: 17px;
@@ -524,7 +478,7 @@ onUnmounted(() => {
 }
 
 .chart-heading > span {
-  color: #7c878c;
+  color: var(--text-tertiary);
   font-size: 11px;
   white-space: nowrap;
 }
@@ -542,7 +496,7 @@ onUnmounted(() => {
 }
 
 .top-rank {
-  color: #8a959a;
+  color: var(--text-tertiary);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -550,7 +504,7 @@ onUnmounted(() => {
 
 .top-title {
   overflow: hidden;
-  color: #39484f;
+  color: var(--text-primary);
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -559,18 +513,18 @@ onUnmounted(() => {
 .top-bar-track {
   height: 8px;
   overflow: hidden;
-  background: #edf1f0;
+  background: var(--border-subtle);
   border-radius: 4px;
 }
 
 .top-bar {
   height: 100%;
-  background: #2a9488;
+  background: var(--primary);
   border-radius: 4px;
 }
 
 .top-row strong {
-  color: #506067;
+  color: var(--text-secondary);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -587,18 +541,18 @@ onUnmounted(() => {
 }
 
 .grid-line {
-  stroke: #e4e9e7;
+  stroke: var(--border-subtle);
   stroke-dasharray: 4 4;
 }
 
-.axis-line { stroke: #aeb9b6; }
-.tick-label { fill: #7d898e; font-size: 10px; }
-.axis-title { fill: #5f6d73; font-size: 11px; }
+.axis-line { stroke: var(--border-strong); }
+.tick-label { fill: var(--text-tertiary); font-size: 10px; }
+.axis-title { fill: var(--text-secondary); font-size: 11px; }
 
 .scatter-point {
-  fill: #e85d57;
+  fill: var(--accent);
   fill-opacity: 0.62;
-  stroke: #ffffff;
+  stroke: var(--surface);
   stroke-width: 1.5;
 }
 
@@ -614,12 +568,12 @@ onUnmounted(() => {
   align-items: center;
   gap: 12px;
   padding: 8px 0;
-  border-bottom: 1px solid #eef1f0;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .author-name {
   overflow: hidden;
-  color: #44535a;
+  color: var(--text-secondary);
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -635,7 +589,7 @@ onUnmounted(() => {
 }
 
 .author-bar-line span {
-  color: #6c797f;
+  color: var(--text-tertiary);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -648,15 +602,15 @@ onUnmounted(() => {
 }
 
 .author-bar--likes,
-.legend-dot--likes { background: #2a9488; }
+.legend-dot--likes { background: var(--primary); }
 .author-bar--comments,
-.legend-dot--comments { background: #e69937; }
+.legend-dot--comments { background: var(--warning); }
 
 .author-legend {
   display: flex;
   gap: 18px;
   padding-top: 12px;
-  color: #6b777c;
+  color: var(--text-tertiary);
   font-size: 11px;
 }
 
@@ -679,8 +633,8 @@ onUnmounted(() => {
   color: var(--muted);
   font-size: 12px;
   text-align: center;
-  background: #f8faf9;
-  border: 1px dashed #d6dfdc;
+  background: var(--surface-subtle);
+  border: 1px dashed var(--border-strong);
   border-radius: 6px;
 }
 
@@ -689,8 +643,8 @@ onUnmounted(() => {
   padding: 48px 24px;
   text-align: center;
   background: var(--paper);
-  border: 1px dashed #d4ddda;
-  border-radius: 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
 }
 
 @media (max-width: 980px) {
@@ -704,20 +658,6 @@ onUnmounted(() => {
 }
 
 @media (max-width: 720px) {
-  .workspace--analytics {
-    width: min(100% - 24px, 1320px);
-  }
-
-  .analytics-heading {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .heading-actions {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-
   .summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

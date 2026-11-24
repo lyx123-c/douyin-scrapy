@@ -1,5 +1,7 @@
 const fs = require('node:fs')
 
+const { fetchManifestViaGithubApi } = require('./github-release-api.cjs')
+
 const { UpdateProtocolError } = require('./update-errors.cjs')
 
 const REPOSITORY_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
@@ -114,11 +116,26 @@ async function fetchUpdateManifest(config, {
   if (typeof fetchImpl !== 'function') {
     throw new UpdateProtocolError('Fetch implementation is unavailable.', 'UPDATE_NETWORK_ERROR')
   }
-  const url = releaseAssetUrl(config, config.manifest_asset || `${channel}.json`, tag)
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), config.request_timeout_ms)
+  let apiError = null
   let response
+  const url = releaseAssetUrl(config, config.manifest_asset || `${channel}.json`, tag)
   try {
+    if (config.prefer_github_api) {
+      try {
+        return await fetchManifestViaGithubApi(config, {
+          tag,
+          fetchImpl,
+          signal: controller.signal,
+          channel,
+        })
+      } catch (error) {
+        apiError = error
+        if (controller.signal.aborted) throw error
+      }
+    }
+
     response = await fetchImpl(url, {
       method: 'GET',
       redirect: 'follow',
@@ -129,6 +146,7 @@ async function fetchUpdateManifest(config, {
       signal: controller.signal,
     })
   } catch (error) {
+    if (apiError) throw apiError
     throw new UpdateProtocolError(
       error?.name === 'AbortError' ? 'Update source request timed out.' : 'Unable to reach update source.',
       'UPDATE_NETWORK_ERROR',

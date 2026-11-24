@@ -36,6 +36,10 @@ export function retryDownloadTask(taskId) {
   return http.post(`/api/downloads/tasks/${encodeURIComponent(taskId)}/retry`)
 }
 
+export function cancelDownloadTask(taskId) {
+  return http.post(`/api/downloads/tasks/${encodeURIComponent(taskId)}/cancel`)
+}
+
 export function deleteDownloadTask(taskId) {
   return http.delete(`/api/downloads/tasks/${encodeURIComponent(taskId)}`)
 }

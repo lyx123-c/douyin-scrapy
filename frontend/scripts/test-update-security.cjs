@@ -347,6 +347,52 @@ test('update source distinguishes network failures from not-found and never uses
   assert.equal(explicitlyApproved.repository, 'lyx123-c/q')
 })
 
+test('update source resolves signed manifest through GitHub API', async () => {
+  const config = validateUpdateSourceConfig({
+    schema_version: 1,
+    provider: 'github_releases',
+    repository: 'example/douyin-updates',
+    allowed_manifest_hosts: ['api.github.com', 'release-assets.githubusercontent.com'],
+    allowed_asset_hosts: ALLOWED_ASSET_HOSTS,
+    request_timeout_ms: 5000,
+    manifest_asset: 'stable.json',
+    signature_asset: 'stable.json.sig',
+    prefer_github_api: true,
+  })
+  const calls = []
+  const fetchImpl = async (url, options = {}) => {
+    calls.push({ url, options })
+    if (url === 'https://api.github.com/repos/example/douyin-updates/releases/latest') {
+      return {
+        ok: true,
+        status: 200,
+        url,
+        json: async () => ({
+          assets: [{
+            name: 'stable.json',
+            url: 'https://api.github.com/repos/example/douyin-updates/releases/assets/42',
+          }],
+        }),
+      }
+    }
+    if (url === 'https://api.github.com/repos/example/douyin-updates/releases/assets/42') {
+      return {
+        ok: true,
+        status: 200,
+        url: 'https://release-assets.githubusercontent.com/github-production-release-asset/stable.json',
+        json: async () => ({ version: '1.3.0' }),
+      }
+    }
+    throw new Error(`unexpected URL: ${url}`)
+  }
+
+  const result = await fetchUpdateManifest(config, { fetchImpl })
+  assert.equal(result.manifest.version, '1.3.0')
+  assert.equal(calls.length, 2)
+  assert.equal(calls[0].options.headers['User-Agent'], 'DouyinWorkbench-Updater')
+  assert.equal(calls[1].options.headers.Accept, 'application/octet-stream')
+})
+
 test('key generation and manifest signing CLIs produce a verifiable signature', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'douyin-update-cli-'))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))

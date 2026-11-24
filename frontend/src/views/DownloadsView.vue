@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import {
+  Close,
   Delete,
   Download,
   Plus,
@@ -14,6 +15,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 
 import {
   addDownloadTasks,
+  cancelDownloadTask,
   clearCompletedDownloads,
   deleteDownloadTask,
   getDownloadTask,
@@ -23,7 +25,7 @@ import {
   startDownloads,
   stopDownloads,
 } from '../api/downloads'
-import AppHeader from '../components/AppHeader.vue'
+import PageHeader from '../components/PageHeader.vue'
 
 const AUTO_REFRESH_INTERVAL = 3000
 const AUTO_REFRESH_ERROR_INTERVAL = 10000
@@ -84,7 +86,26 @@ let requestSequence = 0
 let nextAutoRefreshDelay = AUTO_REFRESH_INTERVAL
 let disposed = false
 
-const queueRunning = computed(() => Boolean(snapshot.queue?.running))
+const backendConnectionState = computed(() => {
+  if (errorMessage.value) return lastUpdatedAt.value ? 'stale' : 'failed'
+  if (!lastUpdatedAt.value) return 'loading'
+  return 'connected'
+})
+const backendConnected = computed(() => backendConnectionState.value === 'connected')
+const backendStateLabel = computed(() => ({
+  connected: 'Backend Connected',
+  stale: 'Backend Disconnected',
+  failed: 'Request Failed',
+  loading: 'Loading',
+}[backendConnectionState.value]))
+const backendStateType = computed(() => {
+  if (backendConnectionState.value === 'connected') return 'success'
+  if (backendConnectionState.value === 'loading') return 'info'
+  return 'danger'
+})
+const queueRunning = computed(
+  () => backendConnected.value && Boolean(snapshot.queue?.running),
+)
 const queueStopping = computed(() => Boolean(snapshot.queue?.stopping))
 const completedCount = computed(
   () => Number(snapshot.counts.success || 0) + Number(snapshot.counts.skipped || 0),
@@ -93,17 +114,21 @@ const canStartQueue = computed(
   () =>
     Number(snapshot.counts.waiting || 0) > 0 &&
     !queueRunning.value &&
+    backendConnected.value &&
     !actionBusy.value,
 )
 const canStopQueue = computed(
-  () => queueRunning.value && !queueStopping.value && !actionBusy.value,
+  () => backendConnected.value && queueRunning.value && !queueStopping.value && !actionBusy.value,
 )
 const queueStatusLabel = computed(() => {
+  if (backendConnectionState.value === 'stale') return '连接中断'
+  if (backendConnectionState.value === 'failed') return '状态未知'
   if (queueStopping.value) return '正在停止'
   if (queueRunning.value) return '运行中'
   return '空闲'
 })
 const queueStatusType = computed(() => {
+  if (!backendConnected.value) return 'danger'
   if (queueStopping.value) return 'warning'
   if (queueRunning.value) return 'success'
   return 'info'
@@ -150,7 +175,6 @@ async function refreshSnapshot({ manual = false } = {}) {
   const requestId = ++requestSequence
   refreshing.value = true
   loading.value = snapshot.items.length === 0
-  if (manual) errorMessage.value = ''
 
   try {
     const response = await getDownloads({ signal: controller.signal })
@@ -238,7 +262,11 @@ function formatBytes(value) {
 }
 
 function canRetry(task) {
-  return ['failed', 'interrupted'].includes(task.status)
+  return ['failed', 'interrupted', 'waiting'].includes(task.status)
+}
+
+function canCancel(task) {
+  return ['running', 'waiting'].includes(task.status)
 }
 
 function canDelete(task) {
@@ -264,10 +292,24 @@ async function stopQueue() {
   actionBusy.value = 'stop'
   try {
     const response = await stopDownloads()
-    ElMessage.warning(response.message || '将在当前任务完成后停止下载队列。')
+    ElMessage.warning(response.message || '正在取消当前下载任务并停止队列。')
     await refreshSnapshot({ manual: true })
   } catch (error) {
     ElMessage.error(error.message || '停止下载队列失败。')
+  } finally {
+    actionBusy.value = ''
+  }
+}
+
+async function cancelTask(task) {
+  if (!canCancel(task) || actionBusy.value) return
+  actionBusy.value = `cancel:${task.task_id}`
+  try {
+    const response = await cancelDownloadTask(task.task_id)
+    ElMessage.warning(response.message || '已发送取消指令，正在停止任务并清理临时文件。')
+    await refreshSnapshot({ manual: true })
+  } catch (error) {
+    ElMessage.error(error.message || '取消任务失败。')
   } finally {
     actionBusy.value = ''
   }
@@ -363,8 +405,19 @@ async function retryTask(task) {
   if (!canRetry(task) || actionBusy.value) return
   actionBusy.value = `retry:${task.task_id}`
   try {
+    if (task.status === 'waiting') {
+      const startResponse = await startDownloads()
+      ElMessage.success(startResponse.message || '下载队列已启动。')
+      await refreshSnapshot({ manual: true })
+      return
+    }
     const response = await retryDownloadTask(task.task_id)
-    ElMessage.success(response.message || '任务已重新加入待下载。')
+    const startResponse = await startDownloads()
+    ElMessage.success(
+      startResponse.data?.started
+        ? '任务已重新加入并启动下载队列。'
+        : startResponse.message || response.message || '任务已重新加入，下载队列正在运行。',
+    )
     await refreshSnapshot({ manual: true })
   } catch (error) {
     ElMessage.error(error.message || '重试任务失败。')
@@ -449,26 +502,21 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app-shell">
-    <AppHeader />
-
-    <main class="workspace workspace--downloads">
-      <section class="downloads-heading">
-        <div>
-          <p class="section-kicker">任务队列</p>
-          <h2>下载管理</h2>
-          <p class="downloads-subtitle">管理下载队列、任务状态和失败重试。</p>
-        </div>
-        <div class="heading-actions">
-          <ElTag :type="pageVisible ? 'success' : 'info'" effect="plain">
-            {{ pageVisible ? '自动刷新 3s' : '后台暂停刷新' }}
-          </ElTag>
-          <span class="last-updated">最近更新 {{ lastUpdatedLabel }}</span>
+  <div class="page-view">
+    <PageHeader
+      title="下载管理"
+      description="管理下载队列、任务状态和失败重试。"
+    >
+      <template #actions>
+          <ElTag :type="backendStateType" effect="plain">{{ backendStateLabel }}</ElTag>
+          <span class="last-updated">
+            {{ pageVisible ? '自动刷新 3s' : '后台暂停刷新' }} · 最近更新 {{ lastUpdatedLabel }}
+          </span>
           <ElButton :icon="Refresh" :loading="refreshing" @click="refreshSnapshot({ manual: true })">
             刷新
           </ElButton>
-        </div>
-      </section>
+      </template>
+    </PageHeader>
 
       <ElAlert
         v-if="errorMessage"
@@ -484,13 +532,29 @@ onUnmounted(() => {
         <div class="queue-panel__heading">
           <div>
             <div class="queue-title-row">
-              <span class="queue-dot" :class="{ active: queueRunning, stopping: queueStopping }" />
-              <h3>下载队列</h3>
+              <span
+                class="queue-dot"
+                :class="{
+                  active: queueRunning,
+                  stopping: queueStopping,
+                  disconnected: !backendConnected,
+                }"
+              />
+              <h2>下载队列</h2>
               <ElTag :type="queueStatusType" effect="light">{{ queueStatusLabel }}</ElTag>
             </div>
             <p class="queue-note">
-              线程 {{ snapshot.queue.thread_alive ? '已连接' : '未运行' }}
-              <span v-if="snapshot.queue.forced_task_count"> · 强制任务 {{ snapshot.queue.forced_task_count }}</span>
+              <template v-if="backendConnected">
+                线程 {{ snapshot.queue.thread_alive ? '已连接' : '未运行' }}
+                <span v-if="snapshot.queue.active_ffmpeg_count">
+                  · 活跃 FFmpeg {{ snapshot.queue.active_ffmpeg_count }}
+                </span>
+                <span v-if="snapshot.queue.forced_task_count">
+                  · 强制任务 {{ snapshot.queue.forced_task_count }}
+                </span>
+              </template>
+              <span v-else-if="dataMayBeStale">连接中断，以下状态来自上次成功读取，不能视为实时状态。</span>
+              <span v-else>无法读取队列状态。</span>
             </p>
           </div>
           <div class="queue-actions">
@@ -555,18 +619,24 @@ onUnmounted(() => {
         <article class="entry-panel">
           <div class="entry-panel__heading">
             <div>
-              <h3>加入下载队列</h3>
+              <h2>加入下载队列</h2>
               <p>任务添加后保持等待，直到手动启动队列。</p>
             </div>
             <span class="entry-icon"><ElIcon><Plus /></ElIcon></span>
           </div>
           <div class="entry-form">
-            <ElInput v-model="addForm.videoId" clearable placeholder="视频 ID" />
-            <ElInput v-model="addForm.title" clearable placeholder="视频标题（可选）" />
+            <label class="entry-field">
+              <span>视频 ID</span>
+              <ElInput v-model="addForm.videoId" clearable placeholder="输入视频 ID" />
+            </label>
+            <label class="entry-field">
+              <span>视频标题</span>
+              <ElInput v-model="addForm.title" clearable placeholder="可选" />
+            </label>
             <ElButton
               type="primary"
               :icon="Plus"
-              :disabled="Boolean(actionBusy)"
+              :disabled="Boolean(actionBusy) || !backendConnected"
               :loading="actionBusy === 'add'"
               @click="submitAddTask"
             >
@@ -578,20 +648,26 @@ onUnmounted(() => {
         <article class="entry-panel">
           <div class="entry-panel__heading">
             <div>
-              <h3>立即下载</h3>
+              <h2>立即下载</h2>
               <p>任务加入后立即请求启动下载队列。</p>
             </div>
             <span class="entry-icon accent"><ElIcon><Download /></ElIcon></span>
           </div>
           <div class="entry-form">
-            <ElInput v-model="immediateForm.videoId" clearable placeholder="视频 ID" />
-            <ElInput v-model="immediateForm.title" clearable placeholder="视频标题（可选）" />
+            <label class="entry-field">
+              <span>视频 ID</span>
+              <ElInput v-model="immediateForm.videoId" clearable placeholder="输入视频 ID" />
+            </label>
+            <label class="entry-field">
+              <span>视频标题</span>
+              <ElInput v-model="immediateForm.title" clearable placeholder="可选" />
+            </label>
             <div class="immediate-actions">
               <ElCheckbox v-model="immediateForm.force">强制重新下载</ElCheckbox>
               <ElButton
                 type="primary"
                 :icon="Download"
-                :disabled="Boolean(actionBusy)"
+                :disabled="Boolean(actionBusy) || !backendConnected"
                 :loading="actionBusy === 'immediate'"
                 @click="submitImmediateDownload"
               >
@@ -605,12 +681,12 @@ onUnmounted(() => {
       <section class="tasks-panel">
         <div class="tasks-heading">
           <div>
-            <h3>任务列表</h3>
+            <h2>任务列表</h2>
             <p>共 {{ snapshot.total }} 条任务记录</p>
           </div>
           <ElButton
             :icon="Delete"
-            :disabled="!hasCompletedTasks || Boolean(actionBusy)"
+            :disabled="!hasCompletedTasks || Boolean(actionBusy) || !backendConnected"
             :loading="actionBusy === 'clear'"
             @click="clearCompleted"
           >
@@ -678,13 +754,26 @@ onUnmounted(() => {
                       @click="openTaskDetails(row)"
                     />
                   </ElTooltip>
-                  <ElTooltip content="重试任务" placement="top">
+                  <ElTooltip content="取消任务" placement="top">
+                    <ElButton
+                      circle
+                      size="small"
+                      type="warning"
+                      plain
+                      :icon="Close"
+                      aria-label="取消任务"
+                      :disabled="!canCancel(row) || Boolean(actionBusy) || !backendConnected"
+                      :loading="actionBusy === `cancel:${row.task_id}`"
+                      @click="cancelTask(row)"
+                    />
+                  </ElTooltip>
+                  <ElTooltip :content="row.status === 'waiting' ? '启动任务' : '重试任务'" placement="top">
                     <ElButton
                       circle
                       size="small"
                       :icon="RefreshRight"
                       aria-label="重试任务"
-                      :disabled="!canRetry(row) || Boolean(actionBusy)"
+                      :disabled="!canRetry(row) || Boolean(actionBusy) || !backendConnected"
                       :loading="actionBusy === `retry:${row.task_id}`"
                       @click="retryTask(row)"
                     />
@@ -697,7 +786,7 @@ onUnmounted(() => {
                       plain
                       :icon="Delete"
                       aria-label="移除任务"
-                      :disabled="!canDelete(row) || Boolean(actionBusy)"
+                      :disabled="!canDelete(row) || Boolean(actionBusy) || !backendConnected"
                       :loading="actionBusy === `delete:${row.task_id}`"
                       @click="removeTask(row)"
                     />
@@ -708,7 +797,6 @@ onUnmounted(() => {
           </ElTable>
         </div>
       </section>
-    </main>
 
     <ElDialog v-model="detailsVisible" title="下载任务详情" width="min(620px, calc(100vw - 32px))">
       <div v-loading="detailsLoading">
@@ -761,46 +849,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.workspace--downloads {
-  width: min(1320px, calc(100% - 40px));
-}
-
-.downloads-heading {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 20px;
-}
-
-.downloads-heading .section-kicker {
-  color: #748187;
-}
-
-.downloads-heading h2 {
-  margin: 0;
-  color: var(--ink);
-  font-size: 28px;
-  letter-spacing: 0;
-}
-
-.downloads-subtitle {
-  margin: 7px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.heading-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.last-updated {
-  color: var(--muted);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
 
 .downloads-alert {
   margin-bottom: 16px;
@@ -811,7 +859,7 @@ onUnmounted(() => {
 .tasks-panel {
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 
 .queue-panel {
@@ -833,9 +881,9 @@ onUnmounted(() => {
   gap: 9px;
 }
 
-.queue-title-row h3,
-.entry-panel h3,
-.tasks-heading h3 {
+.queue-title-row h2,
+.entry-panel h2,
+.tasks-heading h2 {
   margin: 0;
   color: var(--ink);
   font-size: 17px;
@@ -845,18 +893,24 @@ onUnmounted(() => {
 .queue-dot {
   width: 8px;
   height: 8px;
-  background: #9ba6aa;
+  background: var(--text-tertiary);
   border-radius: 50%;
 }
 
 .queue-dot.active {
   background: var(--teal);
-  box-shadow: 0 0 0 4px rgba(42, 148, 136, 0.1);
+  box-shadow: 0 0 0 4px var(--success-soft);
 }
 
 .queue-dot.stopping {
-  background: #d79b2e;
-  box-shadow: 0 0 0 4px rgba(215, 155, 46, 0.1);
+  background: var(--warning);
+  box-shadow: 0 0 0 4px var(--warning-soft);
+}
+
+
+.queue-dot.disconnected {
+  background: var(--error);
+  box-shadow: 0 0 0 4px var(--error-soft);
 }
 
 .queue-note,
@@ -881,8 +935,8 @@ onUnmounted(() => {
 
 .queue-stat {
   padding: 14px 16px;
-  background: #f7f9f8;
-  border: 1px solid #e2e8e6;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-subtle);
   border-radius: 6px;
 }
 
@@ -902,7 +956,7 @@ onUnmounted(() => {
 }
 
 .queue-stat[data-tone="danger"] strong {
-  color: #c94f4a;
+  color: var(--error);
 }
 
 .task-entry-grid {
@@ -921,14 +975,14 @@ onUnmounted(() => {
   width: 34px;
   height: 34px;
   place-items: center;
-  color: #526168;
-  background: #f0f3f2;
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
   border-radius: 7px;
 }
 
 .entry-icon.accent {
-  color: #b9504b;
-  background: #fff0ef;
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .entry-form {
@@ -940,6 +994,22 @@ onUnmounted(() => {
 
 .entry-form .el-input {
   width: 100%;
+}
+
+.entry-field {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.entry-field > span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.entry-form > .el-button {
+  align-self: end;
 }
 
 .immediate-actions {
@@ -965,44 +1035,44 @@ onUnmounted(() => {
 }
 
 .task-table {
-  min-width: 1260px;
+  min-width: 1120px;
 }
 
 .task-title {
-  color: #25333a;
+  color: var(--text-primary);
   font-weight: 600;
 }
 
 .task-subtitle {
   margin-top: 4px;
-  color: #899399;
+  color: var(--text-tertiary);
   font-size: 11px;
 }
 
 .task-id,
 .video-id,
 .task-time {
-  color: #58666d;
+  color: var(--text-secondary);
   font-family: "Cascadia Mono", "Consolas", monospace;
   font-size: 11px;
 }
 
 .video-id {
   margin-top: 4px;
-  color: #879196;
+  color: var(--text-tertiary);
 }
 
 .progress-message {
   margin-top: 4px;
   overflow: hidden;
-  color: #77838a;
+  color: var(--text-tertiary);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .task-error {
-  color: #c94f4a;
+  color: var(--error);
 }
 
 .row-actions {
@@ -1023,7 +1093,7 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 10px;
-  color: #536168;
+  color: var(--text-secondary);
   font-size: 12px;
 }
 
@@ -1044,7 +1114,7 @@ onUnmounted(() => {
 }
 
 .progress-detail-grid strong {
-  color: #304047;
+  color: var(--text-primary);
   font-weight: 500;
   overflow-wrap: anywhere;
 }
@@ -1056,18 +1126,11 @@ onUnmounted(() => {
 }
 
 @media (max-width: 720px) {
-  .workspace--downloads {
-    width: min(100% - 24px, 1320px);
-  }
-
-  .downloads-heading,
   .queue-panel__heading,
   .tasks-heading {
     align-items: flex-start;
     flex-direction: column;
   }
-
-  .heading-actions,
   .queue-actions {
     width: 100%;
     flex-wrap: wrap;

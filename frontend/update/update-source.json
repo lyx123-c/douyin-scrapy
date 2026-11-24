@@ -6,14 +6,17 @@
   "repository": "lyx123-c/q",
   "allow_development_repository_as_update_source": true,
   "allowed_manifest_hosts": [
+    "api.github.com",
     "github.com",
     "objects.githubusercontent.com",
     "release-assets.githubusercontent.com"
   ],
   "allowed_asset_hosts": [
+    "api.github.com",
     "github.com",
     "objects.githubusercontent.com",
     "release-assets.githubusercontent.com"
   ],
-  "request_timeout_ms": 15000
+  "request_timeout_ms": 30000,
+  "prefer_github_api": true
 }

@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "name": "FFmpeg",
+  "binary": "ffmpeg.exe",
+  "version": "N-128889-g88c46fce27-20261113",
+  "git_commit": "88c46fce27e311c73772d9b83db4047dd83b1294",
+  "build_date": "2026-11-13",
+  "build_provider": "BtbN FFmpeg-Builds",
+  "source_archive": "ffmpeg-master-latest-win64-gpl.zip",
+  "source_archive_sha256": "B0EBEF19A5D81263F2CEF2A99BC5C32ED35BFCE11390C04D9B223ABDBFF811AF",
+  "binary_sha256": "3D65AB9CCA95F0B1BBA23C03FF52711675B132A1456DD6C75BA379EE89E5A6ED",
+  "binary_bytes": 170067968,
+  "license": "GPL-3.0-or-later",
+  "gpl_enabled": true,
+  "version3_enabled": true,
+  "ffprobe_bundled": false,
+  "required_decoders": ["h264", "hevc", "aac"],
+  "required_encoders": ["aac", "libx264"],
+  "required_muxers": ["mp4", "mov"],
+  "source_repository": "https://github.com/FFmpeg/FFmpeg",
+  "source_archive_url": "https://github.com/FFmpeg/FFmpeg/archive/88c46fce27e311c73772d9b83db4047dd83b1294.tar.gz",
+  "build_scripts_url": "https://github.com/BtbN/FFmpeg-Builds"
+}

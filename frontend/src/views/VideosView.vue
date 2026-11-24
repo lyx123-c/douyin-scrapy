@@ -11,7 +11,7 @@ import { ElMessage } from 'element-plus'
 
 import { addDownloadTasks } from '../api/downloads'
 import { getVideoSummary, getVideos } from '../api/videos'
-import AppHeader from '../components/AppHeader.vue'
+import PageHeader from '../components/PageHeader.vue'
 
 const STATUS_OPTIONS = [
   { value: 'all', label: '全部状态' },
@@ -334,23 +334,18 @@ onMounted(refreshAll)
 </script>
 
 <template>
-  <div class="app-shell">
-    <AppHeader />
-
-    <main class="workspace workspace--wide">
-      <section class="library-heading">
-        <div>
-          <p class="section-kicker">视频数据</p>
-          <h2>视频库</h2>
-          <p class="library-subtitle">查询、筛选和浏览本地视频记录。</p>
-        </div>
-        <div class="heading-actions">
+  <div class="page-view">
+    <PageHeader
+      title="视频库"
+      description="查询、筛选和浏览本地视频记录。"
+    >
+      <template #actions>
           <span class="last-loaded">最近加载 {{ lastLoadedLabel }}</span>
           <ElButton :icon="Refresh" :loading="loading || summaryLoading" @click="refreshAll">
             刷新
           </ElButton>
-        </div>
-      </section>
+      </template>
+    </PageHeader>
 
       <ElAlert
         v-if="errorMessage"
@@ -387,6 +382,7 @@ onMounted(refreshAll)
       <section class="filter-panel" aria-label="视频筛选">
         <div class="filter-main">
           <ElInput
+            aria-label="搜索视频标题或视频 ID"
             v-model="keywordInput"
             class="keyword-input"
             clearable
@@ -395,7 +391,7 @@ onMounted(refreshAll)
             @keyup.enter="applyFilters"
             @clear="applyFilters"
           />
-          <ElSelect v-model="statusFilter" class="status-select" @change="applyFilters">
+          <ElSelect v-model="statusFilter" class="status-select" aria-label="按下载状态筛选" @change="applyFilters">
             <ElOption
               v-for="option in STATUS_OPTIONS"
               :key="option.value"
@@ -411,7 +407,7 @@ onMounted(refreshAll)
 
         <div class="sort-controls">
           <span class="sort-label">排序</span>
-          <ElSelect v-model="sortBy" class="sort-select" @change="applySorting">
+          <ElSelect v-model="sortBy" class="sort-select" aria-label="排序字段" @change="applySorting">
             <ElOption
               v-for="option in SORT_OPTIONS"
               :key="option.value"
@@ -419,7 +415,7 @@ onMounted(refreshAll)
               :value="option.value"
             />
           </ElSelect>
-          <ElSelect v-model="sortOrder" class="order-select" @change="applySorting">
+          <ElSelect v-model="sortOrder" class="order-select" aria-label="排序方向" @change="applySorting">
             <ElOption
               v-for="option in ORDER_OPTIONS"
               :key="option.value"
@@ -459,7 +455,7 @@ onMounted(refreshAll)
       <section class="table-panel">
         <div class="table-heading">
           <div>
-            <h3>视频记录</h3>
+            <h2>视频记录</h2>
             <span>{{ currentRangeLabel }}</span>
           </div>
           <span class="table-page-label">
@@ -528,51 +524,10 @@ onMounted(refreshAll)
           />
         </div>
       </section>
-    </main>
   </div>
 </template>
 
 <style scoped>
-.workspace--wide {
-  width: min(1320px, calc(100% - 40px));
-}
-
-.library-heading {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 20px;
-}
-
-.library-heading .section-kicker {
-  color: #748187;
-}
-
-.library-heading h2 {
-  margin: 0;
-  color: var(--ink);
-  font-size: 28px;
-  letter-spacing: 0;
-}
-
-.library-subtitle {
-  margin: 7px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.heading-actions {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.last-loaded {
-  color: var(--muted);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
 
 .library-alert {
   margin-bottom: 16px;
@@ -591,7 +546,7 @@ onMounted(refreshAll)
   overflow: hidden;
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 
 .stat-card::after {
@@ -601,7 +556,7 @@ onMounted(refreshAll)
   width: 34px;
   height: 4px;
   content: "";
-  background: #c5cdd0;
+  background: var(--border-strong);
   border-radius: 2px;
 }
 
@@ -610,7 +565,7 @@ onMounted(refreshAll)
 }
 
 .stat-card[data-tone="amber"]::after {
-  background: #d79b2e;
+  background: var(--warning);
 }
 
 .stat-card__label {
@@ -631,7 +586,7 @@ onMounted(refreshAll)
 
 .stat-card__note {
   margin-top: 5px;
-  color: #7b878d;
+  color: var(--text-tertiary);
   font-size: 12px;
 }
 
@@ -657,7 +612,7 @@ onMounted(refreshAll)
   padding: 16px;
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 
 .filter-main,
@@ -703,9 +658,9 @@ onMounted(refreshAll)
   gap: 18px;
   margin-top: 14px;
   padding: 13px 16px;
-  background: #f7f9f8;
+  background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 
 .selection-summary {
@@ -733,7 +688,7 @@ onMounted(refreshAll)
   padding: 18px;
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 
 .table-heading {
@@ -744,7 +699,7 @@ onMounted(refreshAll)
   margin-bottom: 14px;
 }
 
-.table-heading h3 {
+.table-heading h2 {
   margin: 0;
   color: var(--ink);
   font-size: 17px;
@@ -769,13 +724,13 @@ onMounted(refreshAll)
 }
 
 .video-title {
-  color: #25333a;
+  color: var(--text-primary);
   font-weight: 550;
 }
 
 .video-id,
 .task-id {
-  color: #516068;
+  color: var(--text-secondary);
   font-family: "Cascadia Mono", "Consolas", monospace;
   font-size: 12px;
 }
@@ -803,20 +758,6 @@ onMounted(refreshAll)
 }
 
 @media (max-width: 720px) {
-  .workspace--wide {
-    width: min(100% - 24px, 1320px);
-  }
-
-  .library-heading {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .heading-actions {
-    width: 100%;
-    justify-content: space-between;
-  }
-
   .stat-grid {
     grid-template-columns: 1fr;
   }

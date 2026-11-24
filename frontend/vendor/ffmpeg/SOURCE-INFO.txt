@@ -1,0 +1,20 @@
+FFmpeg corresponding source information
+=======================================
+
+Binary: ffmpeg.exe
+Version: N-128889-g88c46fce27-20261113
+Git commit: 88c46fce27e311c73772d9b83db4047dd83b1294
+License: GPL-3.0-or-later
+
+FFmpeg source archive:
+https://github.com/FFmpeg/FFmpeg/archive/88c46fce27e311c73772d9b83db4047dd83b1294.tar.gz
+
+Windows build scripts and static dependency build definitions:
+https://github.com/BtbN/FFmpeg-Builds
+
+This build enables GPL and version 3 components. Before distributing the
+application outside the organization, the distributor must preserve a valid
+source-access method for this exact binary for at least three years, including
+FFmpeg and the statically linked GPL dependencies used by the build.
+
+No ffprobe.exe or ffplay.exe is distributed with this application.

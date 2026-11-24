@@ -24,7 +24,7 @@ import {
 } from '../api/auth'
 import { addDownloadTasks, getDownloadStatus } from '../api/downloads'
 import { getVideoSummary, getVideos } from '../api/videos'
-import AppHeader from '../components/AppHeader.vue'
+import PageHeader from '../components/PageHeader.vue'
 
 const AUTO_REFRESH_INTERVAL = 1500
 const AUTO_REFRESH_ERROR_INTERVAL = 6000
@@ -483,24 +483,19 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app-shell">
-    <AppHeader />
-
-    <main class="workspace workspace--capture">
-      <section class="capture-heading">
-        <div>
-          <p class="section-kicker">视频来源</p>
-          <h2>抓取管理</h2>
-          <p class="capture-subtitle">通过推荐、博主主页、精选或搜索关键词提取视频 ID。</p>
-        </div>
-        <div class="heading-actions">
+  <div class="page-view">
+    <PageHeader
+      title="抓取管理"
+      description="通过推荐、博主主页、精选或搜索关键词提取视频 ID。"
+    >
+      <template #actions>
           <ElTag :type="pageVisible ? 'success' : 'info'" effect="plain">
             {{ pageVisible ? '自动刷新 1.5s' : '后台暂停刷新' }}
           </ElTag>
           <span class="last-updated">最近更新 {{ lastUpdatedLabel }}</span>
           <ElButton :icon="Refresh" @click="manualRefresh">刷新</ElButton>
-        </div>
-      </section>
+      </template>
+    </PageHeader>
 
       <ElAlert
         v-if="requestError || capture.error"
@@ -542,7 +537,7 @@ onUnmounted(() => {
       <section class="capture-panel">
         <div class="capture-panel__heading">
           <div>
-            <h3>抓取操作</h3>
+            <h2>抓取操作</h2>
             <p>切换模式后，目标输入规则会同步变化。</p>
           </div>
           <div class="capture-status-tags">
@@ -567,8 +562,8 @@ onUnmounted(() => {
 
         <div class="capture-form">
           <div class="form-field mode-field">
-            <label>抓取模式</label>
-            <ElSelect v-model="mode" :disabled="captureBusy">
+            <label for="capture-mode">抓取模式</label>
+            <ElSelect id="capture-mode" v-model="mode" :disabled="captureBusy">
               <ElOption
                 v-for="option in MODE_OPTIONS"
                 :key="option.value"
@@ -580,8 +575,9 @@ onUnmounted(() => {
 
           <div class="form-field target-field">
             <template v-if="mode === 'user'">
-              <label>博主主页链接</label>
+              <label for="capture-user-url">博主主页链接</label>
               <ElInput
+                id="capture-user-url"
                 v-model="userHomeUrl"
                 clearable
                 placeholder="粘贴抖音博主主页地址"
@@ -589,8 +585,9 @@ onUnmounted(() => {
               />
             </template>
             <template v-else-if="mode === 'search'">
-              <label>搜索关键词</label>
+              <label for="capture-search-keyword">搜索关键词</label>
               <ElInput
+                id="capture-search-keyword"
                 v-model="searchKeyword"
                 clearable
                 placeholder="输入关键词或话题"
@@ -599,8 +596,8 @@ onUnmounted(() => {
               />
             </template>
             <template v-else>
-              <label>目标地址</label>
-              <ElInput :model-value="targetUrl" readonly>
+              <label for="capture-target-url">目标地址</label>
+              <ElInput id="capture-target-url" :model-value="targetUrl" readonly>
                 <template #append>固定</template>
               </ElInput>
             </template>
@@ -656,7 +653,7 @@ onUnmounted(() => {
       <section class="results-panel">
         <div class="results-heading">
           <div>
-            <h3>{{ resultSource === 'recent' ? '最近视频工作区' : '抓取结果' }}</h3>
+            <h2>{{ resultSource === 'recent' ? '最近视频工作区' : '抓取结果' }}</h2>
             <p>
               {{ resultSource === 'recent' ? '已从视频库载入最近记录。' : '抓取完成后由现有后端 Scrapling 流程自动尝试合并到视频库。' }}
             </p>
@@ -746,7 +743,7 @@ onUnmounted(() => {
 
         <div v-if="!hasResults && recentVideos.length" class="recent-list">
           <div class="recent-heading">
-            <h4>最近保存的视频</h4>
+            <h3>最近保存的视频</h3>
             <span>显示 {{ recentVideos.length }} 条</span>
           </div>
           <div class="recent-grid">
@@ -757,51 +754,10 @@ onUnmounted(() => {
           </div>
         </div>
       </section>
-    </main>
   </div>
 </template>
 
 <style scoped>
-.workspace--capture {
-  width: min(1320px, calc(100% - 40px));
-}
-
-.capture-heading {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 20px;
-}
-
-.capture-heading .section-kicker {
-  color: #748187;
-}
-
-.capture-heading h2 {
-  margin: 0;
-  color: var(--ink);
-  font-size: 28px;
-  letter-spacing: 0;
-}
-
-.capture-subtitle {
-  margin: 7px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.heading-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.last-updated {
-  color: var(--muted);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
 
 .capture-alert {
   margin-bottom: 16px;
@@ -817,7 +773,7 @@ onUnmounted(() => {
   padding: 17px 18px;
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 
 .stat-card span {
@@ -835,7 +791,7 @@ onUnmounted(() => {
 }
 
 .stat-card[data-tone="accent"] strong {
-  color: #c75550;
+  color: var(--accent);
 }
 
 .capture-panel,
@@ -844,7 +800,7 @@ onUnmounted(() => {
   padding: 20px;
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 
 .capture-panel__heading,
@@ -855,9 +811,9 @@ onUnmounted(() => {
   gap: 18px;
 }
 
-.capture-panel h3,
-.results-heading h3,
-.recent-heading h4 {
+.capture-panel h2,
+.results-heading h2,
+.recent-heading h3 {
   margin: 0;
   color: var(--ink);
   font-size: 17px;
@@ -877,17 +833,17 @@ onUnmounted(() => {
   gap: 14px;
   margin-top: 16px;
   padding: 11px 13px;
-  color: #76520c;
+  color: var(--warning);
   font-size: 12px;
-  background: #fff6e7;
-  border: 1px solid #ecd3a0;
+  background: var(--warning-soft);
+  border: 1px solid color-mix(in srgb, var(--warning) 28%, var(--surface));
   border-radius: 6px;
 }
 
 .capture-auth-banner[data-state="failed"] {
-  color: #9a3f3b;
-  background: #fff0ef;
-  border-color: #efc3bf;
+  color: var(--error);
+  background: var(--error-soft);
+  border-color: color-mix(in srgb, var(--error) 28%, var(--surface));
 }
 
 .capture-panel p,
@@ -908,7 +864,7 @@ onUnmounted(() => {
 .form-field label {
   display: block;
   margin-bottom: 7px;
-  color: #59676e;
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
 }
@@ -945,18 +901,18 @@ onUnmounted(() => {
   width: 8px;
   height: 8px;
   margin-top: 6px;
-  background: #9ba6aa;
+  background: var(--text-tertiary);
   border-radius: 50%;
 }
 
 .status-dot.running {
   background: var(--teal);
-  box-shadow: 0 0 0 4px rgba(42, 148, 136, 0.1);
+  box-shadow: 0 0 0 4px var(--success-soft);
 }
 
 .status-dot.stopping {
-  background: #d79b2e;
-  box-shadow: 0 0 0 4px rgba(215, 155, 46, 0.1);
+  background: var(--warning);
+  box-shadow: 0 0 0 4px var(--warning-soft);
 }
 
 .status-main strong {
@@ -1016,7 +972,7 @@ onUnmounted(() => {
 }
 
 .video-id {
-  color: #526168;
+  color: var(--text-secondary);
   font-family: "Cascadia Mono", "Consolas", monospace;
   font-size: 12px;
 }
@@ -1028,13 +984,13 @@ onUnmounted(() => {
   gap: 20px;
   margin-top: 16px;
   padding: 28px 20px;
-  background: #f8faf9;
-  border: 1px dashed #d4dcda;
+  background: var(--surface-subtle);
+  border: 1px dashed var(--border-strong);
   border-radius: 7px;
 }
 
 .empty-copy strong {
-  color: #334249;
+  color: var(--text-primary);
   font-size: 14px;
 }
 
@@ -1057,7 +1013,7 @@ onUnmounted(() => {
   margin-bottom: 10px;
 }
 
-.recent-heading h4 {
+.recent-heading h3 {
   font-size: 14px;
 }
 
@@ -1077,8 +1033,8 @@ onUnmounted(() => {
   gap: 12px;
   min-width: 0;
   padding: 10px 12px;
-  background: #f7f9f8;
-  border: 1px solid #e2e8e6;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-subtle);
   border-radius: 5px;
 }
 
@@ -1088,7 +1044,7 @@ onUnmounted(() => {
 
 .recent-item strong {
   overflow: hidden;
-  color: #3a484f;
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 500;
   text-overflow: ellipsis;
@@ -1106,11 +1062,6 @@ onUnmounted(() => {
 }
 
 @media (max-width: 720px) {
-  .workspace--capture {
-    width: min(100% - 24px, 1320px);
-  }
-
-  .capture-heading,
   .capture-panel__heading,
   .results-heading,
   .capture-status,
@@ -1118,8 +1069,6 @@ onUnmounted(() => {
     align-items: flex-start;
     flex-direction: column;
   }
-
-  .heading-actions,
   .results-actions,
   .capture-actions {
     width: 100%;

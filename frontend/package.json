@@ -1,7 +1,7 @@
 {
   "name": "douyin-workbench-frontend",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Windows 本地抖音视频采集、下载与任务管理工作台。",
   "author": "Douyin Video Workbench",
   "type": "module",

@@ -5,7 +5,6 @@ import { Refresh } from '@element-plus/icons-vue'
 import { getAuthStatus, isAuthRequiredError, login } from '../api/auth'
 import { configuredApiBaseUrl } from '../api'
 import { getHealth } from '../api/system'
-import AppHeader from '../components/AppHeader.vue'
 import StatusTile from '../components/StatusTile.vue'
 
 const checking = ref(true)
@@ -204,10 +203,9 @@ onMounted(checkServices)
 </script>
 
 <template>
-  <div class="app-shell">
-    <AppHeader />
+  <div class="page-view">
 
-    <main class="workspace">
+    <div class="page-body">
       <section class="workspace-heading">
         <div>
           <p class="section-kicker">服务联调</p>
@@ -329,7 +327,7 @@ onMounted(checkServices)
           </ElDescriptionsItem>
         </ElDescriptions>
       </section>
-    </main>
+    </div>
   </div>
 </template>
 

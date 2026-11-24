@@ -23,7 +23,6 @@ import {
   startDownloads,
   stopDownloads,
 } from '../api/downloads'
-import AppHeader from '../components/AppHeader.vue'
 
 const AUTO_REFRESH_INTERVAL = 3000
 const AUTO_REFRESH_ERROR_INTERVAL = 10000
@@ -449,10 +448,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app-shell">
-    <AppHeader />
+  <div class="page-view">
 
-    <main class="workspace workspace--downloads">
+    <div class="page-body">
       <section class="downloads-heading">
         <div>
           <p class="section-kicker">任务队列</p>
@@ -708,7 +706,7 @@ onUnmounted(() => {
           </ElTable>
         </div>
       </section>
-    </main>
+    </div>
 
     <ElDialog v-model="detailsVisible" title="下载任务详情" width="min(620px, calc(100vw - 32px))">
       <div v-loading="detailsLoading">

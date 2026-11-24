@@ -11,7 +11,6 @@ import { ElMessage } from 'element-plus'
 
 import { addDownloadTasks } from '../api/downloads'
 import { getVideoSummary, getVideos } from '../api/videos'
-import AppHeader from '../components/AppHeader.vue'
 
 const STATUS_OPTIONS = [
   { value: 'all', label: '全部状态' },
@@ -334,10 +333,9 @@ onMounted(refreshAll)
 </script>
 
 <template>
-  <div class="app-shell">
-    <AppHeader />
+  <div class="page-view">
 
-    <main class="workspace workspace--wide">
+    <div class="page-body">
       <section class="library-heading">
         <div>
           <p class="section-kicker">视频数据</p>
@@ -528,7 +526,7 @@ onMounted(refreshAll)
           />
         </div>
       </section>
-    </main>
+    </div>
   </div>
 </template>
 

@@ -4,7 +4,6 @@ import { Refresh } from '@element-plus/icons-vue'
 
 import { getAnalytics } from '../api/analytics'
 import { getVideoSummary } from '../api/videos'
-import AppHeader from '../components/AppHeader.vue'
 
 const summary = reactive({
   total: 0,
@@ -211,10 +210,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app-shell">
-    <AppHeader />
+  <div class="page-view">
 
-    <main class="workspace workspace--analytics">
+    <div class="page-body">
       <section class="analytics-heading">
         <div>
           <p class="section-kicker">下载数据</p>
@@ -387,7 +385,7 @@ onUnmounted(() => {
         <h3>暂无下载统计数据</h3>
         <p>下载完成并写入统计记录后，这里会显示点赞、评论和作者统计图。</p>
       </section>
-    </main>
+    </div>
   </div>
 </template>
 

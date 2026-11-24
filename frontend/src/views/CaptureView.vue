@@ -24,7 +24,6 @@ import {
 } from '../api/auth'
 import { addDownloadTasks, getDownloadStatus } from '../api/downloads'
 import { getVideoSummary, getVideos } from '../api/videos'
-import AppHeader from '../components/AppHeader.vue'
 
 const AUTO_REFRESH_INTERVAL = 1500
 const AUTO_REFRESH_ERROR_INTERVAL = 6000
@@ -483,10 +482,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app-shell">
-    <AppHeader />
+  <div class="page-view">
 
-    <main class="workspace workspace--capture">
+    <div class="page-body">
       <section class="capture-heading">
         <div>
           <p class="section-kicker">视频来源</p>
@@ -757,7 +755,7 @@ onUnmounted(() => {
           </div>
         </div>
       </section>
-    </main>
+    </div>
   </div>
 </template>
 

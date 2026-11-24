@@ -32,6 +32,8 @@ const versionInfo = ref(null)
 const updateState = ref(null)
 const updateActionBusy = ref('')
 const updateLoadError = ref('')
+const installConfirmVisible = ref(false)
+const installError = ref('')
 const backendPaths = ref(null)
 
 const production = computed(() => Boolean(managed.value?.production))
@@ -140,22 +142,27 @@ async function cancelDownload() {
   }
 }
 
-async function installUpdate() {
+function requestInstall() {
   if (updateActionBusy.value) return
-  try {
-    await ElMessageBox.confirm(
-      '软件将检查任务空闲状态，安全关闭 Backend 和 Electron，自动完成 NSIS 覆盖安装并启动新版本。升级期间请勿强制结束进程。',
-      '退出软件并安装',
-      { type: 'warning', confirmButtonText: '退出并安装', cancelButtonText: '取消' },
-    )
-  } catch {
-    return
-  }
+  installError.value = ''
+  installConfirmVisible.value = true
+}
+
+function cancelInstall() {
+  if (updateActionBusy.value === 'install') return
+  installConfirmVisible.value = false
+  installError.value = ''
+}
+
+async function confirmInstall() {
+  if (updateActionBusy.value) return
   updateActionBusy.value = 'install'
+  installError.value = ''
   try {
     await quitAndInstallUpdate()
   } catch (error) {
-    ElMessage.error(error.message || '启动安装程序失败。')
+    installError.value = error.message || '启动安装程序失败。'
+    ElMessage.error(installError.value)
     updateActionBusy.value = ''
   }
 }
@@ -493,16 +500,44 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="updateStatus === 'READY_TO_INSTALL'" class="ready-install">
-        <ElTag type="success" effect="plain">安装包已验证</ElTag>
-        <span>点击后软件将自动关闭、覆盖安装并重启新版本，无需再次操作。</span>
-        <ElButton type="primary" :loading="updateActionBusy === 'install'" @click="installUpdate">
-          安装更新
-        </ElButton>
+        <template v-if="!installConfirmVisible">
+          <ElTag type="success" effect="plain">安装包已验证</ElTag>
+          <span>点击后软件将自动关闭、覆盖安装并重启新版本。</span>
+          <ElButton type="primary" @click="requestInstall">
+            安装更新
+          </ElButton>
+        </template>
+        <template v-else>
+          <ElTag type="warning" effect="plain">等待确认</ElTag>
+          <span>确认退出当前软件并开始安装吗？升级期间请勿强制结束进程。</span>
+          <div class="ready-install__actions">
+            <ElButton
+              type="primary"
+              :loading="updateActionBusy === 'install'"
+              @click="confirmInstall"
+            >
+              确认退出并安装
+            </ElButton>
+            <ElButton :disabled="updateActionBusy === 'install'" @click="cancelInstall">
+              取消
+            </ElButton>
+          </div>
+        </template>
       </div>
+
+      <ElAlert
+        v-if="installError"
+        title="安装启动失败"
+        :description="installError"
+        type="error"
+        show-icon
+        :closable="false"
+        class="mt-3"
+      />
 
       <div v-if="['DOWNLOAD_FAILED', 'DOWNLOAD_CANCELLED', 'INSTALL_FAILED'].includes(updateStatus)" class="update-actions">
         <ElButton v-if="updateStatus !== 'INSTALL_FAILED'" :icon="Download" @click="downloadUpdate">重新下载</ElButton>
-        <ElButton v-if="updateStatus === 'INSTALL_FAILED'" type="primary" @click="installUpdate">重新启动安装</ElButton>
+        <ElButton v-if="updateStatus === 'INSTALL_FAILED'" type="primary" @click="requestInstall">重新启动安装</ElButton>
         <ElButton v-if="updateStatus === 'DOWNLOAD_CANCELLED'" @click="checkUpdate">重新检查</ElButton>
       </div>
     </section>
@@ -725,6 +760,13 @@ onBeforeUnmount(() => {
   flex: 1 1 360px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.ready-install__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .update-actions {

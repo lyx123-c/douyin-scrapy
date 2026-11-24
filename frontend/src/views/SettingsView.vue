@@ -31,6 +31,7 @@ const managed = ref(null)
 const versionInfo = ref(null)
 const updateState = ref(null)
 const updateActionBusy = ref('')
+const updateLoadError = ref('')
 const backendPaths = ref(null)
 
 const production = computed(() => Boolean(managed.value?.production))
@@ -94,12 +95,17 @@ function formatDate(value) {
 
 async function loadUpdates() {
   if (!updateBridgeAvailable) return
+  updateLoadError.value = ''
   const [versionResult, stateResult] = await Promise.allSettled([
     getLocalVersionInfo(),
     getUpdateState(),
   ])
   if (versionResult.status === 'fulfilled') versionInfo.value = versionResult.value
   if (stateResult.status === 'fulfilled') updateState.value = stateResult.value
+  const failures = [versionResult, stateResult]
+    .filter((result) => result.status === 'rejected')
+    .map((result) => result.reason?.message || String(result.reason))
+  if (failures.length) updateLoadError.value = failures.join('；')
 }
 
 async function checkUpdate() {
@@ -275,6 +281,7 @@ onMounted(async () => {
     })
   }
   loading.value = true
+  await loadUpdates()
   try {
     await loadStorage()
   } finally {
@@ -417,6 +424,16 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="update-details">
+        <ElAlert
+          v-if="updateLoadError"
+          title="版本信息读取失败"
+          :description="updateLoadError"
+          type="error"
+          show-icon
+          :closable="false"
+          class="mb-3"
+        />
+
         <div><span>软件名称</span><strong>抖音视频工作台</strong></div>
         <div><span>当前版本</span><strong>{{ versionInfo?.current_version || '读取失败' }}</strong></div>
         <div><span>更新通道</span><strong>{{ versionInfo?.channel || 'stable' }}</strong></div>

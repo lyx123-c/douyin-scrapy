@@ -34,6 +34,101 @@ function assertAllowedHost(value, hosts, label) {
   }
 }
 
+function downloadNetworkError(error, stage) {
+  return new UpdateProtocolError(
+    error?.name === 'AbortError'
+      ? 'Update package request timed out.'
+      : 'Unable to reach update package source.',
+    'UPDATE_DOWNLOAD_NETWORK_ERROR',
+    {
+      stage,
+      cause: error?.message || String(error),
+    },
+  )
+}
+
+function parseGithubReleaseDownloadUrl(value) {
+  let parsed
+  try {
+    parsed = new URL(value)
+  } catch {
+    return null
+  }
+  if (parsed.protocol !== 'https:' || parsed.hostname.toLowerCase() !== 'github.com') {
+    return null
+  }
+  const parts = parsed.pathname.split('/').filter(Boolean)
+  if (
+    parts.length < 6
+    || parts[2] !== 'releases'
+    || parts[3] !== 'download'
+  ) {
+    return null
+  }
+  return {
+    repository: `${parts[0]}/${parts[1]}`,
+    tag: decodeURIComponent(parts[4]),
+    assetName: decodeURIComponent(parts.slice(5).join('/')),
+  }
+}
+
+async function resolveGithubReleaseAssetUrl(downloadUrl, {
+  fetchImpl,
+  signal,
+}) {
+  const parsed = parseGithubReleaseDownloadUrl(downloadUrl)
+  if (!parsed) return downloadUrl
+
+  const releaseUrl = `${GITHUB_API_ORIGIN}/repos/${parsed.repository}/releases/tags/${encodeURIComponent(parsed.tag)}`
+  let releaseResponse
+  try {
+    releaseResponse = await fetchImpl(releaseUrl, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: API_HEADERS,
+      signal,
+    })
+  } catch (error) {
+    throw downloadNetworkError(error, 'resolve_release')
+  }
+  if (releaseResponse.status === 404) {
+    throw new UpdateProtocolError(
+      `Update release was not found: ${parsed.repository}@${parsed.tag}`,
+      'UPDATE_DOWNLOAD_NOT_FOUND',
+      { stage: 'resolve_release', status: 404 },
+    )
+  }
+  if (!releaseResponse.ok) {
+    throw new UpdateProtocolError(
+      `Update release lookup failed with HTTP ${releaseResponse.status}.`,
+      'UPDATE_DOWNLOAD_HTTP_ERROR',
+      { stage: 'resolve_release', status: releaseResponse.status },
+    )
+  }
+
+  let release
+  try {
+    release = await releaseResponse.json()
+  } catch (error) {
+    throw new UpdateProtocolError(
+      'Update release metadata is invalid.',
+      'UPDATE_DOWNLOAD_METADATA_INVALID',
+      { stage: 'resolve_release', cause: error?.message || String(error) },
+    )
+  }
+  const asset = Array.isArray(release?.assets)
+    ? release.assets.find((item) => item?.name === parsed.assetName)
+    : null
+  if (!asset?.url) {
+    throw new UpdateProtocolError(
+      `Update package asset was not found: ${parsed.assetName}`,
+      'UPDATE_DOWNLOAD_NOT_FOUND',
+      { stage: 'resolve_asset', status: 404 },
+    )
+  }
+  return asset.url
+}
+
 async function fetchManifestViaGithubApi(config, {
   tag = '',
   fetchImpl,
@@ -58,7 +153,11 @@ async function fetchManifestViaGithubApi(config, {
     throw networkError(error)
   }
   if (releaseResponse.status === 404) {
-    throw new UpdateProtocolError('Update source release was not found.', 'UPDATE_SOURCE_NOT_FOUND')
+    throw new UpdateProtocolError(
+      `Update source release was not found: ${config.repository}@${tag || 'latest'}`,
+      'UPDATE_SOURCE_NOT_FOUND',
+      { status: 404, repository: config.repository, tag: tag || null },
+    )
   }
   if (!releaseResponse.ok) {
     throw new UpdateProtocolError(
@@ -132,4 +231,6 @@ async function fetchManifestViaGithubApi(config, {
 
 module.exports = {
   fetchManifestViaGithubApi,
+  parseGithubReleaseDownloadUrl,
+  resolveGithubReleaseAssetUrl,
 }

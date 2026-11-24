@@ -393,6 +393,37 @@ test('update source resolves signed manifest through GitHub API', async () => {
   assert.equal(calls[1].options.headers.Accept, 'application/octet-stream')
 })
 
+test('wrong update repository is reported with repository context', async () => {
+  const config = validateUpdateSourceConfig({
+    schema_version: 1,
+    provider: 'github_releases',
+    repository: 'wrong-owner/wrong-repo',
+    allowed_manifest_hosts: ['api.github.com'],
+    allowed_asset_hosts: ALLOWED_ASSET_HOSTS,
+    request_timeout_ms: 5000,
+    manifest_asset: 'stable.json',
+    signature_asset: 'stable.json.sig',
+    prefer_github_api: true,
+  })
+
+  await assert.rejects(
+    fetchUpdateManifest(config, {
+      fetchImpl: async (url) => ({
+        ok: false,
+        status: 404,
+        url,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ message: 'Not Found' }),
+      }),
+    }),
+    (error) => (
+      error.code === 'UPDATE_SOURCE_NOT_FOUND'
+      && error.message.includes('wrong-owner/wrong-repo')
+      && error.details?.status === 404
+    ),
+  )
+})
+
 test('key generation and manifest signing CLIs produce a verifiable signature', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'douyin-update-cli-'))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))

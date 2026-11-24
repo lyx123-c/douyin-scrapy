@@ -285,6 +285,8 @@ class UpdateController {
         filename,
         allowedHosts: this.sourceConfig.allowed_asset_hosts,
         allowInsecureLocalhost: this.allowInsecureLocalhost,
+        preferGithubApi: this.sourceConfig.prefer_github_api === true,
+        requestTimeoutMs: this.sourceConfig.request_timeout_ms,
         fetchImpl: this.fetchImpl,
         signal: this.activeDownload.signal,
         onProgress: (progress) => {
@@ -308,6 +310,18 @@ class UpdateController {
     } catch (error) {
       this.installerPath = null
       const cancelled = error?.code === 'UPDATE_DOWNLOAD_CANCELLED'
+      if (!cancelled) {
+        console.error(
+          '[update] download failed',
+          JSON.stringify({
+            code: error?.code || 'UPDATE_DOWNLOAD_FAILED',
+            stage: error?.details?.stage || null,
+            status: error?.details?.status || null,
+            host: error?.details?.host || null,
+            cause: error?.details?.cause || null,
+          }),
+        )
+      }
       return this.setState(
         cancelled ? UPDATE_STATUSES.DOWNLOAD_CANCELLED : UPDATE_STATUSES.DOWNLOAD_FAILED,
         {

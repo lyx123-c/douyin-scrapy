@@ -7,11 +7,31 @@ const path = require('node:path')
 const test = require('node:test')
 
 const { buildHandoffScript } = require('../electron/update/installer-handoff.cjs')
+const { downloadUpdatePackage } = require('../electron/update/package-downloader.cjs')
 const { createKeyringEntry, signManifest } = require('../electron/update/signature.cjs')
 const { UpdateController, UPDATE_STATUSES } = require('../electron/update/update-controller.cjs')
 
 function sha256(buffer) {
   return crypto.createHash('sha256').update(buffer).digest('hex')
+}
+
+function streamResponse(bytes, { url, contentType = 'application/octet-stream', status = 200 } = {}) {
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array(bytes))
+      controller.close()
+    },
+  })
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    url,
+    headers: new Headers({
+      'content-type': contentType,
+      'content-length': String(bytes.length),
+    }),
+    body,
+  }
 }
 
 function makeKey() {
@@ -141,6 +161,213 @@ test('full installer update checks, downloads, verifies and becomes installable'
   assert.ok(states.includes(UPDATE_STATUSES.CHECKING))
   assert.ok(states.includes(UPDATE_STATUSES.DOWNLOADING))
   assert.ok(states.includes(UPDATE_STATUSES.READY_TO_INSTALL))
+})
+
+test('GitHub package download resolves the asset through api.github.com', async (t) => {
+  const packageBytes = crypto.randomBytes(64 * 1024)
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'douyin-github-api-download-'))
+  t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }))
+  const calls = []
+  const fetchImpl = async (url) => {
+    calls.push(url)
+    if (url === 'https://api.github.com/repos/lyx123-c/douyin-scrapy/releases/tags/v1.3.0') {
+      return {
+        ok: true,
+        status: 200,
+        url,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({
+          assets: [{
+            name: 'installer.exe',
+            url: 'https://api.github.com/repos/lyx123-c/douyin-scrapy/releases/assets/123',
+          }],
+        }),
+      }
+    }
+    if (url === 'https://api.github.com/repos/lyx123-c/douyin-scrapy/releases/assets/123') {
+      return streamResponse(packageBytes, {
+        url: 'https://release-assets.githubusercontent.com/github-production-release-asset/installer.exe',
+      })
+    }
+    throw new Error(`unexpected URL: ${url}`)
+  }
+
+  const result = await downloadUpdatePackage({
+    url: 'https://github.com/lyx123-c/douyin-scrapy/releases/download/v1.3.0/installer.exe',
+    expectedSize: packageBytes.length,
+    expectedSha256: sha256(packageBytes),
+    tempRoot,
+    filename: 'installer.exe',
+    allowedHosts: [
+      'api.github.com',
+      'github.com',
+      'release-assets.githubusercontent.com',
+    ],
+    preferGithubApi: true,
+    fetchImpl,
+  })
+
+  assert.equal(calls.length, 2)
+  assert.match(calls[0], /api\.github\.com\/repos\/lyx123-c\/douyin-scrapy\/releases\/tags\/v1\.3\.0/)
+  assert.equal(result.size, packageBytes.length)
+  assert.equal(result.sha256, sha256(packageBytes))
+  assert.equal(fs.readFileSync(result.path).equals(packageBytes), true)
+})
+
+test('interrupted GitHub download resumes with a Range request', async (t) => {
+  const packageBytes = crypto.randomBytes(64 * 1024)
+  const splitAt = packageBytes.length / 2
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'douyin-range-resume-'))
+  t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }))
+  const calls = []
+  let assetRequests = 0
+  const fetchImpl = async (url, options = {}) => {
+    calls.push({ url, options })
+    if (url.includes('/releases/tags/')) {
+      return {
+        ok: true,
+        status: 200,
+        url,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({
+          assets: [{ name: 'installer.exe', url: 'https://api.github.com/assets/resume' }],
+        }),
+      }
+    }
+    if (url === 'https://api.github.com/assets/resume') {
+      assetRequests += 1
+      if (assetRequests === 1) {
+        let sent = false
+        const body = new ReadableStream({
+          pull(controller) {
+            if (!sent) {
+              sent = true
+              controller.enqueue(new Uint8Array(packageBytes.subarray(0, splitAt)))
+              return
+            }
+            controller.error(new Error('terminated'))
+          },
+        })
+        return {
+          ok: true,
+          status: 200,
+          url: 'https://release-assets.githubusercontent.com/installer.exe',
+          headers: new Headers({
+            'content-type': 'application/octet-stream',
+            'content-length': String(packageBytes.length),
+          }),
+          body,
+        }
+      }
+      return streamResponse(packageBytes.subarray(splitAt), {
+        url: 'https://release-assets.githubusercontent.com/installer.exe',
+        status: 206,
+      })
+    }
+    throw new Error(`unexpected URL: ${url}`)
+  }
+
+  const result = await downloadUpdatePackage({
+    url: 'https://github.com/owner/repo/releases/download/v1.3.0/installer.exe',
+    expectedSize: packageBytes.length,
+    expectedSha256: sha256(packageBytes),
+    tempRoot,
+    filename: 'installer.exe',
+    allowedHosts: ['api.github.com', 'github.com', 'release-assets.githubusercontent.com'],
+    preferGithubApi: true,
+    maxAttempts: 3,
+    retryDelayMs: 1,
+    fetchImpl,
+  })
+
+  const assetCalls = calls.filter((call) => call.url === 'https://api.github.com/assets/resume')
+  assert.equal(assetCalls.length, 2)
+  assert.equal(assetCalls[0].options.headers.Range, undefined)
+  assert.equal(assetCalls[1].options.headers.Range, `bytes=${splitAt}-`)
+  assert.equal(fs.readFileSync(result.path).equals(packageBytes), true)
+})
+
+test('HTML error page is rejected instead of treated as an installer', async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'douyin-html-download-'))
+  t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }))
+  const fetchImpl = async (url) => {
+    if (url.includes('/releases/tags/')) {
+      return {
+        ok: true,
+        status: 200,
+        url,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({
+          assets: [{ name: 'installer.exe', url: 'https://api.github.com/assets/404-page' }],
+        }),
+      }
+    }
+    return streamResponse(Buffer.from('<html>error</html>'), {
+      url: 'https://release-assets.githubusercontent.com/error.html',
+      contentType: 'text/html',
+    })
+  }
+
+  await assert.rejects(
+    downloadUpdatePackage({
+      url: 'https://github.com/owner/repo/releases/download/v1.3.0/installer.exe',
+      expectedSize: 18,
+      expectedSha256: 'a'.repeat(64),
+      tempRoot,
+      filename: 'installer.exe',
+      allowedHosts: ['api.github.com', 'github.com', 'release-assets.githubusercontent.com'],
+      preferGithubApi: true,
+      fetchImpl,
+    }),
+    (error) => (
+      error.code === 'UPDATE_DOWNLOAD_INVALID_CONTENT_TYPE'
+      && error.details?.stage === 'download_response'
+    ),
+  )
+  assert.equal(require('node:fs').existsSync(path.join(tempRoot, 'installer.exe')), false)
+})
+
+test('HTTP download failures preserve status and failure stage', async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'douyin-http-status-'))
+  t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }))
+  const fetchImpl = async (url) => {
+    if (url.includes('/releases/tags/')) {
+      return {
+        ok: true,
+        status: 200,
+        url,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({
+          assets: [{ name: 'installer.exe', url: 'https://api.github.com/assets/forbidden' }],
+        }),
+      }
+    }
+    return {
+      ok: false,
+      status: 403,
+      url: 'https://api.github.com/assets/forbidden',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: null,
+    }
+  }
+
+  await assert.rejects(
+    downloadUpdatePackage({
+      url: 'https://github.com/owner/repo/releases/download/v1.3.0/installer.exe',
+      expectedSize: 100,
+      expectedSha256: 'a'.repeat(64),
+      tempRoot,
+      filename: 'installer.exe',
+      allowedHosts: ['api.github.com', 'github.com'],
+      preferGithubApi: true,
+      fetchImpl,
+    }),
+    (error) => (
+      error.code === 'UPDATE_DOWNLOAD_HTTP_ERROR'
+      && error.details?.status === 403
+      && error.details?.stage === 'download_response'
+    ),
+  )
 })
 
 test('SHA256 mismatch never creates a runnable installer', async (t) => {

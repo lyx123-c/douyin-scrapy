@@ -157,6 +157,7 @@ async function fetchUpdateManifest(config, {
   }
 
   if (response.status === 404) {
+    if (apiError) throw apiError
     throw new UpdateProtocolError('Update source asset was not found.', 'UPDATE_SOURCE_NOT_FOUND')
   }
   if (!response.ok) {

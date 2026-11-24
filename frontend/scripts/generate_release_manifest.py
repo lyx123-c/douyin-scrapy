@@ -237,7 +237,7 @@ def main() -> int:
     if update_source.get("provider") != "github_releases":
         raise RuntimeError("Unsupported update source provider.")
     if (
-        update_source.get("repository") == "lyx123-c/q"
+        update_source.get("repository") == "lyx123-c/douyin-scrapy"
         and update_source.get("allow_development_repository_as_update_source") is not True
     ):
         raise RuntimeError(

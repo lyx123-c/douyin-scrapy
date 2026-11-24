@@ -108,7 +108,7 @@ U1.1 does not ship `Updater.exe`, does not download updates and does not replace
 
 U1.3 completes one-click full-NSIS updates. Electron requires an idle Backend, stops RuntimeServices through the FastAPI shutdown endpoint, waits for the owned Backend process to exit, and launches a short-lived PowerShell handoff. After the Electron PID exits, the handoff runs the verified NSIS installer with `/S` and no `/D`, verifies installer exit code and installed version metadata, writes `update-result.json`, and restarts the new application. The restarted application rechecks Backend Health and reports success or failure in Settings.
 
-The public update source is `lyx123-c/q`. It must remain public for anonymous client updates. The existing legacy Release tagged `0.1` is not a valid update source and is not overwritten.
+The public update source is `lyx123-c/douyin-scrapy`. It must remain public for anonymous client updates. The existing legacy Release tagged `0.1` is not a valid update source and is not overwritten.
 
 The NSIS installer uses the stable product/app identity. The official `v0.2.0` release upgrades an isolated `0.1.0` baseline in-place while preserving external user data.
 

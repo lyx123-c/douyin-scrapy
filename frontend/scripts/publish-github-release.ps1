@@ -1,5 +1,5 @@
 param(
-  [string]$Repository = 'lyx123-c/q',
+  [string]$Repository = 'lyx123-c/douyin-scrapy',
   [Parameter(Mandatory = $true)][string]$Tag,
   [Parameter(Mandatory = $true)][string]$Title,
   [Parameter(Mandatory = $true)][string]$NotesFile,

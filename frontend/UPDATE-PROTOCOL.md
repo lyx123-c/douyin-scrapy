@@ -4,7 +4,7 @@
 
 This phase defines the version contract, update manifest, Ed25519 trust model, public update source configuration, file path policy, and the local version information contract. It does not download, apply, or roll back updates, and it does not ship an Updater executable.
 
-The production update source is the public GitHub repository `lyx123-c/q`. The client uses only public Release assets and never embeds a GitHub Token.
+The production update source is the public GitHub repository `lyx123-c/douyin-scrapy`. The client uses only public Release assets and never embeds a GitHub Token.
 
 ## Version Contract
 
@@ -141,7 +141,7 @@ User data roots, video roots, Cookie/Profile, CSV, queue, logs and the bootstrap
 
 Configuration: `frontend/update/update-source.json`
 
-`repository` is configured as `lyx123-c/q` and explicitly approves this public development repository as the update source. If the repository becomes private or the approval flag is removed, update checks must fail safely.
+`repository` is configured as `lyx123-c/douyin-scrapy` and explicitly approves this public development repository as the update source. If the repository becomes private or the approval flag is removed, update checks must fail safely.
 
 The client:
 

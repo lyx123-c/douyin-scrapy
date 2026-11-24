@@ -35,7 +35,7 @@ function parseUrl(value, hosts, label) {
   return parsed
 }
 
-function validateUpdateSourceConfig(config, { developmentRepository = 'lyx123-c/q' } = {}) {
+function validateUpdateSourceConfig(config, { developmentRepository = 'lyx123-c/douyin-scrapy' } = {}) {
   if (!isPlainObject(config) || config.schema_version !== 1) {
     throw new UpdateProtocolError('Unsupported update source configuration.', 'UPDATE_SOURCE_CONFIG_INVALID')
   }

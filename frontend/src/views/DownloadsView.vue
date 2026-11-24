@@ -17,6 +17,7 @@ import {
   addDownloadTasks,
   cancelDownloadTask,
   clearCompletedDownloads,
+  clearFailedDownloads,
   deleteDownloadTask,
   getDownloadTask,
   getDownloads,
@@ -143,6 +144,7 @@ const lastUpdatedLabel = computed(() => {
   }).format(lastUpdatedAt.value)
 })
 const hasCompletedTasks = computed(() => completedCount.value > 0)
+const hasFailedTasks = computed(() => Number(snapshot.counts.failed || 0) > 0)
 const dataMayBeStale = computed(() => Boolean(errorMessage.value && lastUpdatedAt.value))
 
 function clearAutoRefreshTimer() {
@@ -322,13 +324,18 @@ async function submitAddTask() {
     ElMessage.warning('请输入视频 ID。')
     return
   }
+  const title = addForm.title.trim()
+  if (!title) {
+    ElMessage.warning('请输入有效视频标题。')
+    return
+  }
 
   actionBusy.value = 'add'
   try {
     const response = await addDownloadTasks([
       {
         video_id: videoId,
-        title: addForm.title.trim() || '无标题',
+        title,
       },
     ])
     const result = response.data || {}
@@ -339,7 +346,7 @@ async function submitAddTask() {
     } else if (result.existing?.length) {
       ElMessage.info('该任务已在下载队列中。')
     } else if (result.skipped?.length) {
-      ElMessage.warning('视频 ID 格式不正确，任务未加入。')
+      ElMessage.warning('视频 ID 或标题无效，任务未加入。')
     } else {
       ElMessage.info('没有创建新的下载任务。')
     }
@@ -358,12 +365,17 @@ async function submitImmediateDownload() {
     ElMessage.warning('请输入视频 ID。')
     return
   }
+  const title = immediateForm.title.trim()
+  if (!title) {
+    ElMessage.warning('请输入有效视频标题。')
+    return
+  }
 
   actionBusy.value = 'immediate'
   try {
     const response = await immediateDownload({
       videoId,
-      title: immediateForm.title.trim() || '无标题',
+      title,
       force: immediateForm.force,
     })
     const result = response.data || {}
@@ -475,13 +487,47 @@ async function clearCompleted() {
     throw action
   }
 
-  actionBusy.value = 'clear'
+  actionBusy.value = 'clear-completed'
   try {
     const response = await clearCompletedDownloads()
     ElMessage.success(`已清理 ${response.data?.removed || 0} 个任务。`)
     await refreshSnapshot({ manual: true })
   } catch (error) {
     ElMessage.error(error.message || '清理任务失败。')
+  } finally {
+    actionBusy.value = ''
+  }
+}
+
+async function clearFailed() {
+  const failedCount = Number(snapshot.counts.failed || 0)
+  if (actionBusy.value) return
+  if (!failedCount) {
+    ElMessage.info('当前没有失败的下载任务')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确定清理 ${failedCount} 条失败任务吗？不会删除视频、CSV 记录或其他状态的任务。`,
+      '确认清理失败任务',
+      {
+        type: 'warning',
+        confirmButtonText: '清理失败任务',
+        cancelButtonText: '取消',
+      },
+    )
+  } catch (action) {
+    if (action === 'cancel' || action === 'close') return
+    throw action
+  }
+
+  actionBusy.value = 'clear-failed'
+  try {
+    const response = await clearFailedDownloads()
+    ElMessage.success(`已清理 ${response.data?.removed || 0} 条失败任务。`)
+    await refreshSnapshot({ manual: true })
+  } catch (error) {
+    ElMessage.error(error.message || '清理失败任务失败。')
   } finally {
     actionBusy.value = ''
   }
@@ -684,14 +730,24 @@ onUnmounted(() => {
             <h2>任务列表</h2>
             <p>共 {{ snapshot.total }} 条任务记录</p>
           </div>
-          <ElButton
-            :icon="Delete"
-            :disabled="!hasCompletedTasks || Boolean(actionBusy) || !backendConnected"
-            :loading="actionBusy === 'clear'"
-            @click="clearCompleted"
-          >
-            清理已完成
-          </ElButton>
+          <div class="tasks-actions">
+            <ElButton
+              :icon="Delete"
+              :disabled="!hasCompletedTasks || Boolean(actionBusy) || !backendConnected"
+              :loading="actionBusy === 'clear-completed'"
+              @click="clearCompleted"
+            >
+              清理已完成
+            </ElButton>
+            <ElButton
+              :icon="Delete"
+              :disabled="!hasFailedTasks || Boolean(actionBusy) || !backendConnected"
+              :loading="actionBusy === 'clear-failed'"
+              @click="clearFailed"
+            >
+              清理失败任务
+            </ElButton>
+          </div>
         </div>
 
         <div class="task-table-shell">
@@ -1030,6 +1086,14 @@ onUnmounted(() => {
   margin-bottom: 14px;
 }
 
+.tasks-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .task-table-shell {
   overflow-x: auto;
 }
@@ -1134,6 +1198,11 @@ onUnmounted(() => {
   .queue-actions {
     width: 100%;
     flex-wrap: wrap;
+  }
+
+  .tasks-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .queue-actions .el-button {

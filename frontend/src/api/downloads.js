@@ -20,7 +20,7 @@ export function addDownloadTasks(items) {
   return http.post('/api/downloads/tasks', { items })
 }
 
-export function immediateDownload({ videoId, title = '无标题', force = false }) {
+export function immediateDownload({ videoId, title = '', force = false }) {
   return http.post('/api/downloads/immediate', {
     video_id: videoId,
     title,
@@ -46,4 +46,8 @@ export function deleteDownloadTask(taskId) {
 
 export function clearCompletedDownloads() {
   return http.post('/api/downloads/tasks/clear-completed')
+}
+
+export function clearFailedDownloads() {
+  return http.post('/api/downloads/tasks/clear-failed')
 }

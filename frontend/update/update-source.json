@@ -3,7 +3,7 @@
   "provider": "github_releases",
   "manifest_asset": "stable.json",
   "signature_asset": "stable.json.sig",
-  "repository": "lyx123-c/q",
+  "repository": "lyx123-c/douyin-scrapy",
   "allow_development_repository_as_update_source": true,
   "allowed_manifest_hosts": [
     "api.github.com",

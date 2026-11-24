@@ -327,7 +327,7 @@ test('update source distinguishes network failures from not-found and never uses
     () => validateUpdateSourceConfig({
       schema_version: 1,
       provider: 'github_releases',
-      repository: 'lyx123-c/q',
+      repository: 'lyx123-c/douyin-scrapy',
       allowed_manifest_hosts: ['github.com'],
       allowed_asset_hosts: ALLOWED_ASSET_HOSTS,
       request_timeout_ms: 5000,
@@ -338,13 +338,13 @@ test('update source distinguishes network failures from not-found and never uses
   const explicitlyApproved = validateUpdateSourceConfig({
     schema_version: 1,
     provider: 'github_releases',
-    repository: 'lyx123-c/q',
+    repository: 'lyx123-c/douyin-scrapy',
     allow_development_repository_as_update_source: true,
     allowed_manifest_hosts: ['github.com'],
     allowed_asset_hosts: ALLOWED_ASSET_HOSTS,
     request_timeout_ms: 5000,
   })
-  assert.equal(explicitlyApproved.repository, 'lyx123-c/q')
+  assert.equal(explicitlyApproved.repository, 'lyx123-c/douyin-scrapy')
 })
 
 test('update source resolves signed manifest through GitHub API', async () => {

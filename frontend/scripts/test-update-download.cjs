@@ -579,6 +579,8 @@ test('installer handoff waits for the Electron process and never uses a fixed sl
     resultPath: 'C:\\Temp\\update-result.json',
   })
   assert.match(script, /Wait-Process -Id \$targetPid -Timeout \$waitSeconds/)
+  assert.match(script, /Wait-Process -Name \$appProcessName -Timeout \$waitSeconds/)
+  assert.ok(script.indexOf('wait_app_processes') < script.indexOf('Start-Process -FilePath $installer'))
   assert.match(script, /ArgumentList "\/S"/)
   assert.match(script, /WaitForExit/)
   assert.match(script, /\$actualVersion -ne \$targetVersion/)

@@ -5,7 +5,10 @@ const os = require('node:os')
 const path = require('node:path')
 
 const storage = require('./storage-config.cjs')
-const { launchInstallerAfterExit } = require('./update/installer-handoff.cjs')
+const {
+  launchInstallerAfterExit,
+  stageInstallerForExecution,
+} = require('./update/installer-handoff.cjs')
 const signature = require('./update/signature.cjs')
 const { UpdateController, UPDATE_STATUSES } = require('./update/update-controller.cjs')
 const updateSource = require('./update/update-source.cjs')
@@ -627,14 +630,25 @@ async function prepareBackendForUpdate() {
 }
 
 async function launchVerifiedInstaller(installerPath, targetVersion) {
-  launchInstallerAfterExit({
-    electronPid: process.pid,
+  const installRoot = getInstallRoot()
+  const staged = stageInstallerForExecution({
     installerPath,
-    appExePath: app.getPath('exe'),
-    installRoot: getInstallRoot(),
-    targetVersion,
-    resultPath: UPDATE_RESULT_PATH,
+    installRoot,
   })
+  try {
+    launchInstallerAfterExit({
+      electronPid: process.pid,
+      installerPath: staged.path,
+      stagingDirectory: staged.directory,
+      appExePath: app.getPath('exe'),
+      installRoot,
+      targetVersion,
+      resultPath: UPDATE_RESULT_PATH,
+    })
+  } catch (error) {
+    fs.rmSync(staged.directory, { recursive: true, force: true })
+    throw error
+  }
   setImmediate(() => app.exit(0))
 }
 
@@ -885,7 +899,7 @@ if (!hasSingleInstanceLock) {
         channel: localVersionMetadata.channel,
         sourceConfig: updateSourceConfig,
         keyring: updateKeyring,
-        tempRoot: getInstallRoot(),
+        tempRoot: app.getPath('desktop'),
         onStateChanged: broadcastUpdateState,
         prepareInstall: prepareBackendForUpdate,
         recoverInstall: recoverBackendAfterFailedUpdate,

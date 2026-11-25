@@ -6,7 +6,11 @@ const os = require('node:os')
 const path = require('node:path')
 const test = require('node:test')
 
-const { buildHandoffScript } = require('../electron/update/installer-handoff.cjs')
+const {
+  buildHandoffScript,
+  encodePowerShell,
+  stageInstallerForExecution,
+} = require('../electron/update/installer-handoff.cjs')
 const { downloadUpdatePackage } = require('../electron/update/package-downloader.cjs')
 const { createKeyringEntry, signManifest } = require('../electron/update/signature.cjs')
 const { UpdateController, UPDATE_STATUSES } = require('../electron/update/update-controller.cjs')
@@ -573,18 +577,102 @@ test('installer handoff waits for the Electron process and never uses a fixed sl
   const script = buildHandoffScript({
     electronPid: 1234,
     installerPath: 'C:\\Temp\\verified-installer.exe',
+    stagingDirectory: 'C:\\Temp\\DouyinWorkbenchUpdates\\install-test',
     appExePath: 'C:\\Temp\\DouyinWorkbench\\DouyinWorkbench.exe',
     installRoot: 'C:\\Temp\\DouyinWorkbench',
     targetVersion: '0.2.0',
     resultPath: 'C:\\Temp\\update-result.json',
   })
   assert.match(script, /Wait-Process -Id \$targetPid -Timeout \$waitSeconds/)
-  assert.match(script, /Wait-Process -Name \$appProcessName -Timeout \$waitSeconds/)
+  assert.match(script, /Get-InstallRootProcesses/)
+  assert.match(script, /Wait-Process -Id @\(\$remainingInstallProcesses\.ProcessId\)/)
   assert.ok(script.indexOf('wait_app_processes') < script.indexOf('Start-Process -FilePath $installer'))
   assert.match(script, /ArgumentList "\/S"/)
+  assert.match(script, /Remove-Item -LiteralPath \$installerStagingDirectory/)
   assert.match(script, /WaitForExit/)
   assert.match(script, /\$actualVersion -ne \$targetVersion/)
   assert.match(script, /Start-Process -FilePath \$appExe -ArgumentList "--post-update"/)
   assert.match(script, /Start-Process -FilePath \$installer/)
   assert.doesNotMatch(script, /Start-Sleep|timeout\s+\/t/i)
+})
+
+test('generated installer handoff is valid PowerShell syntax', () => {
+  const script = buildHandoffScript({
+    electronPid: 1234,
+    installerPath: 'C:\\Temp\\DouyinWorkbenchUpdates\\install-test\\verified-installer.exe',
+    stagingDirectory: 'C:\\Temp\\DouyinWorkbenchUpdates\\install-test',
+    appExePath: 'C:\\Temp\\DouyinWorkbench\\DouyinWorkbench.exe',
+    installRoot: 'C:\\Temp\\DouyinWorkbench',
+    targetVersion: '1.3.0',
+    resultPath: 'C:\\Temp\\update-result.json',
+  })
+  const scriptBase64 = Buffer.from(script, 'utf8').toString('base64')
+  const command = [
+    `$script = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${scriptBase64}'))`,
+    '$tokens = $null',
+    '$errors = $null',
+    '[System.Management.Automation.Language.Parser]::ParseInput($script, [ref]$tokens, [ref]$errors) | Out-Null',
+    'if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }',
+  ].join('; ')
+  const result = require('node:child_process').spawnSync(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-EncodedCommand', encodePowerShell(command)],
+    { encoding: 'utf8', windowsHide: true },
+  )
+  assert.equal(result.status, 0, result.stderr || result.stdout)
+})
+
+test('installer staging copies the verified package outside the install directory', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'douyin-installer-stage-'))
+  const installRoot = path.join(root, 'installed-app')
+  const stagingBase = path.join(root, 'staging')
+  const installerPath = path.join(installRoot, 'DouyinWorkbench-1.3.0-x64.exe')
+  fs.mkdirSync(installRoot, { recursive: true })
+  fs.writeFileSync(installerPath, Buffer.from('verified-installer'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+
+  const staged = stageInstallerForExecution({
+    installerPath,
+    installRoot,
+    stagingBase,
+  })
+  assert.equal(staged.path.startsWith(`${stagingBase}${path.sep}`), true)
+  assert.equal(staged.path.startsWith(`${installRoot}${path.sep}`), false)
+  assert.equal(fs.readFileSync(staged.path, 'utf8'), 'verified-installer')
+  assert.equal(path.basename(staged.path), path.basename(installerPath))
+})
+
+test('installer staging reuses a verified package already outside the install directory', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'douyin-installer-desktop-'))
+  const installRoot = path.join(root, 'installed-app')
+  const desktopRoot = path.join(root, 'Desktop')
+  const installerPath = path.join(desktopRoot, 'DouyinWorkbench-1.3.0-x64.exe')
+  fs.mkdirSync(installRoot, { recursive: true })
+  fs.mkdirSync(desktopRoot, { recursive: true })
+  fs.writeFileSync(installerPath, Buffer.from('verified-installer'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+
+  const staged = stageInstallerForExecution({
+    installerPath,
+    installRoot,
+    stagingBase: path.join(root, 'staging'),
+  })
+  assert.equal(staged.path, installerPath)
+  assert.equal(staged.directory, null)
+  assert.equal(fs.existsSync(installerPath), true)
+})
+
+test('installer staging refuses to place the executable inside the install directory', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'douyin-installer-stage-invalid-'))
+  const installRoot = path.join(root, 'installed-app')
+  const installerPath = path.join(installRoot, 'DouyinWorkbench-1.3.0-x64.exe')
+  fs.mkdirSync(installRoot, { recursive: true })
+  fs.writeFileSync(installerPath, Buffer.from('verified-installer'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+
+  assert.throws(() => stageInstallerForExecution({
+    installerPath,
+    installRoot,
+    stagingBase: path.join(installRoot, 'updates'),
+  }), /outside the installation directory/)
 })

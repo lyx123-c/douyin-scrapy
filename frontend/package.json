@@ -1,7 +1,7 @@
 {
   "name": "douyin-workbench-frontend",
   "private": true,
-  "version": "0.2.9",
+  "version": "0.2.10",
   "description": "Windows 本地抖音视频采集、下载与任务管理工作台。",
   "author": "Douyin Video Workbench",
   "type": "module",
@@ -14,7 +14,7 @@
     "version:metadata": "node scripts/generate-version-metadata.cjs",
     "build": "npm run version:metadata && vite build",
     "preview": "vite preview",
-    "update:test": "node --test scripts/test-update-security.cjs scripts/test-update-download.cjs",
+    "update:test": "node --test scripts/test-update-security.cjs scripts/test-update-download.cjs scripts/test-version-metadata.cjs",
     "update:manifest": "node scripts/generate-update-manifest.cjs",
     "update:sign": "node scripts/sign-update-manifest.cjs",
     "storage:test": "node --test scripts/test-storage-config.cjs",

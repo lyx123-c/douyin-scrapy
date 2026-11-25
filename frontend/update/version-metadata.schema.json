@@ -34,7 +34,8 @@
       ]
     },
     "tag": {
-      "type": "string"
+      "type": "string",
+      "description": "The output of git describe --tags HEAD. It is the exact tag at HEAD when available, otherwise the nearest tag plus commit distance, or 未标记 when the repository has no tags."
     },
     "commit": {
       "type": "string",
